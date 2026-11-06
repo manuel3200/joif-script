@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>CyberShell - VPN Manager</title>
+  
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  
+  <link href="https://fonts.googleapis.com" rel="preconnect"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  
+  <script id="tailwind-config">
+    tailwind.config = {
+        darkMode: "class",
+        theme: {
+            extend: {
+                colors: {
+                    "primary-container": "#0ea5e9",
+                    "on-surface-variant": "#bec8d2",
+                    "tertiary": "#4edea3",
+                    "error": "#ffb4ab",
+                    "surface": "#0f131d",
+                    "secondary": "#d0bcff",
+                    "on-surface": "#dfe2f1",
+                    "background": "#0f131d",
+                    "primary": "#89ceff"
+                },
+                fontFamily: {
+                    "body-md": ["Inter"],
+                    "headline-md": ["Geist"],
+                    "code": ["JetBrains Mono"]
+                }
+            }
+        }
+    }
+  </script>
+  <style>
+    body { background-color: #0b0f19; color: #dfe2f1; }
+    
+    .glass-panel, .glass-card {
+        background-color: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.3s ease;
+    }
+    .glass-card:hover {
+        border-color: rgba(137, 206, 255, 0.3);
+        box-shadow: 0 0 15px rgba(137, 206, 255, 0.15);
+    }
+    .primary-glow {
+        box-shadow: 0 0 15px rgba(137, 206, 255, 0.3);
+    }
+    .table-row-hover:hover {
+        background-color: rgba(255,255,255,0.03);
+        box-shadow: inset 2px 0 0 0 #89ceff;
+    }
+    
+    .ios-switch {
+        appearance: none; width: 48px; height: 24px;
+        background: rgba(255, 255, 255, 0.1); border-radius: 9999px;
+        position: relative; cursor: pointer; outline: none; transition: 0.3s;
+    }
+    .ios-switch::after {
+        content: ''; position: absolute; top: 2px; left: 2px;
+        width: 20px; height: 20px; background: white; border-radius: 50%;
+        transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .ios-switch:checked { background: #89ceff; box-shadow: 0 0 10px rgba(137, 206, 255, 0.5); }
+    .ios-switch:checked::after { transform: translateX(24px); }
+
+    .neon-input {
+        background: rgba(10, 14, 24, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.3s ease; outline: none; color: white; padding: 8px 12px; border-radius: 6px;
+    }
+    .neon-input:focus { border-color: #89ceff; box-shadow: 0 0 8px rgba(137, 206, 255, 0.4); }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot.active { background-color: #4edea3; box-shadow: 0 0 8px #4edea3; animation: pulse-green 2s infinite; }
+    .status-dot.inactive { background-color: #ffb4ab; box-shadow: 0 0 8px #ffb4ab; }
+
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(78, 222, 163, 0.7); }
+        70% { box-shadow: 0 0 0 6px rgba(78, 222, 163, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(78, 222, 163, 0); }
+    }
+    
+    .view-section { display: none; }
+    .view-section.active { display: block; animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      display: flex; justify-content: center; align-items: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 1000;
+    }
+    .modal-overlay.active { opacity: 1; pointer-events: auto; }
+    .modal-box {
+      background: var(--surface); border: 1px solid rgba(255,255,255,0.1);
+      padding: 30px; border-radius: 16px; width: 100%; max-width: 400px;
+      transform: translateY(20px); transition: all 0.3s ease;
+    }
+    .modal-overlay.active .modal-box { transform: translateY(0); }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-on-surface min-h-screen font-body-md antialiased selection:bg-primary selection:text-black">
+
+<!-- Global Background Elements -->
+<div class="fixed inset-0 pointer-events-none z-[-1]" style="background: radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.05), transparent 40%), radial-gradient(circle at 85% 30%, rgba(153, 50, 204, 0.05), transparent 40%);"></div>
+
+<!-- SideNavBar -->
+<aside class="w-[280px] h-screen fixed left-0 top-0 bg-[#0f131d]/60 backdrop-blur-xl border-r border-white/10 shadow-[0_0_15px_rgba(137,206,255,0.1)] flex flex-col py-8 z-40 hidden md:flex">
+  <div class="px-6 mb-8 flex items-center gap-4">
+    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#0ea5e9] to-[#d0bcff] flex items-center justify-center text-black font-bold shadow-[0_0_15px_rgba(137,206,255,0.4)]">
+      <span class="material-symbols-outlined">terminal</span>
+    </div>
+    <div>
+      <h1 class="font-headline-md text-2xl font-bold text-primary tracking-tight">CyberShell</h1>
+      <p class="text-xs text-on-surface-variant uppercase tracking-widest mt-1">Admin Node</p>
+    </div>
+  </div>
+
+  <nav class="flex-1 px-4 space-y-2">
+    <a href="#" onclick="switchView('dashboard', this)" class="nav-link active flex items-center gap-3 px-4 py-3 rounded-lg text-primary font-bold border-l-4 border-primary bg-gradient-to-r from-primary/10 to-transparent shadow-[inset_2px_0_10px_rgba(137,206,255,0.1)] transition-all">
+      <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+      Dashboard
+    </a>
+    <a href="#" onclick="switchView('services', this)" class="nav-link flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-all border-l-4 border-transparent">
+      <span class="material-symbols-outlined">dns</span>
+      VPS Services
+    </a>
+    <a href="#" onclick="switchView('config', this)" class="nav-link flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-all border-l-4 border-transparent">
+      <span class="material-symbols-outlined">settings_input_component</span>
+      Config Generator
+    </a>
+  </nav>
+
+  <div class="px-6 mt-auto">
+    <button class="w-full py-3 rounded-lg bg-gradient-to-r from-[#0ea5e9] to-[#571bc1] text-white font-bold text-sm shadow-[0_0_15px_rgba(14,165,233,0.3)] hover:scale-105 transition-all flex items-center justify-center gap-2">
+      <span class="material-symbols-outlined text-[18px]">security</span>
+      System Secure
+    </button>
+  </div>
+</aside>
+
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-280px)] h-16 bg-[#0f131d]/40 backdrop-blur-lg border-b border-white/5 flex items-center justify-between px-6 z-30">
+  <div class="flex items-center gap-4 md:hidden">
+    <span class="material-symbols-outlined text-primary">menu</span>
+    <h1 class="text-xl font-bold text-primary">CyberShell</h1>
+  </div>
+  <div class="hidden md:flex flex-1">
+    <span class="text-on-surface-variant font-code text-sm">Target: localhost / 127.0.0.1</span>
+  </div>
+  <div class="flex items-center gap-4 ml-auto">
+    <button class="text-on-surface-variant hover:text-primary transition-all relative">
+      <span class="material-symbols-outlined">notifications</span>
+      <span class="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full"></span>
+    </button>
+    <div class="w-px h-6 bg-white/10 mx-2 hidden md:block"></div>
+    <button onclick="logout()" class="hidden md:flex items-center gap-2 text-on-surface-variant hover:text-error transition-colors text-sm font-bold">
+      <span class="material-symbols-outlined text-[18px]">logout</span>
+      Logout
+    </button>
+  </div>
+</header>
+
+<!-- Main Container -->
+<main class="pt-24 pb-12 px-4 md:px-8 md:ml-[280px] min-h-screen">
+  
+  <!-- ==================== DASHBOARD VIEW ==================== -->
+  <div id="view-dashboard" class="view-section active">
+    
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div class="glass-panel rounded-xl p-6 flex flex-col">
+        <div class="flex justify-between items-start mb-4">
+          <div class="p-2 bg-primary/10 rounded-lg"><span class="material-symbols-outlined text-primary">group</span></div>
+        </div>
+        <p class="text-sm text-on-surface-variant mb-1">Total Users</p>
+        <h2 class="text-3xl font-bold text-white" id="stat-total-users">-</h2>
+      </div>
+      
+      <div class="glass-panel rounded-xl p-6 flex flex-col relative overflow-hidden">
+        <div class="absolute -right-4 -top-4 w-24 h-24 bg-tertiary/10 rounded-full blur-2xl"></div>
+        <div class="flex justify-between items-start mb-4">
+          <div class="p-2 bg-tertiary/10 rounded-lg"><span class="material-symbols-outlined text-tertiary">swap_calls</span></div>
+          <div class="flex items-center gap-2">
+            <span class="status-dot active"></span><span class="text-tertiary text-xs uppercase font-bold">Live</span>
+          </div>
+        </div>
+        <p class="text-sm text-on-surface-variant mb-1">Active Connections</p>
+        <h2 class="text-3xl font-bold text-white" id="stat-active-users">-</h2>
+      </div>
+      
+      <div class="glass-panel rounded-xl p-6 flex flex-col">
+        <div class="flex justify-between items-start mb-4">
+          <div class="p-2 bg-secondary/10 rounded-lg"><span class="material-symbols-outlined text-secondary">memory</span></div>
+        </div>
+        <p class="text-sm text-on-surface-variant mb-1">Server Status</p>
+        <div class="flex items-end gap-3 mt-auto">
+          <h2 class="text-2xl font-bold text-tertiary" id="stat-server-status">ONLINE</h2>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Table -->
+    <div class="flex justify-between items-end gap-4 mb-6">
+      <div>
+        <h2 class="text-2xl font-bold text-white">User Management</h2>
+        <p class="text-sm text-on-surface-variant mt-1">Manage active connections and access limits.</p>
+      </div>
+      <button onclick="openModal()" class="bg-gradient-to-r from-primary to-[#003751] text-black py-2.5 px-6 rounded-lg font-bold text-sm primary-glow hover:scale-105 transition-all flex items-center gap-2">
+        <span class="material-symbols-outlined text-[18px]">person_add</span> Create User
+      </button>
+    </div>
+
+    <div class="glass-panel rounded-xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-white/5 bg-[#0f131d]/30">
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold">Username</th>
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold">Expiration Date</th>
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold">HWID</th>
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold">Limit</th>
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold">Status</th>
+              <th class="py-4 px-6 text-xs text-on-surface-variant uppercase tracking-wider font-bold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody" class="divide-y divide-white/5 text-sm">
+            <tr><td colspan="6" class="py-8 text-center text-on-surface-variant">Loading secure data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== VPS SERVICES VIEW ==================== -->
+  <div id="view-services" class="view-section">
+    <div class="mb-8">
+      <h2 class="text-3xl font-bold text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.1)]">Services Management</h2>
+      <p class="text-on-surface-variant mt-1">Configure and monitor core daemons across the fleet.</p>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      
+      <!-- BadVPN -->
+      <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+        <div class="absolute -top-24 -right-24 w-48 h-48 bg-tertiary/10 rounded-full blur-3xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+        <div class="flex justify-between items-start mb-6 relative z-10">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-lg bg-[#0f131d]/80 border border-white/5 flex items-center justify-center text-tertiary shadow-inner">
+              <span class="material-symbols-outlined text-[28px]">router</span>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">BadVPN UDPGW</h3>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="status-dot active"></span><span class="text-xs text-tertiary font-bold uppercase">Running</span>
+              </div>
+            </div>
+          </div>
+          <input type="checkbox" class="ios-switch" checked disabled>
+        </div>
+        <div class="space-y-4 relative z-10 border-t border-white/5 pt-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-xs text-on-surface-variant flex items-center gap-1 font-bold">
+              <span class="material-symbols-outlined text-[14px]">settings_ethernet</span> Listening Port
+            </label>
+            <input type="number" class="neon-input w-32 font-code" value="7300" disabled>
+          </div>
+          <p class="text-xs text-on-surface-variant mt-2">* Managed automatically by Node.js Agent</p>
+        </div>
+      </div>
+
+      <!-- OpenSSH -->
+      <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+        <div class="absolute -top-24 -right-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+        <div class="flex justify-between items-start mb-6 relative z-10">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-lg bg-[#0f131d]/80 border border-white/5 flex items-center justify-center text-primary shadow-inner">
+              <span class="material-symbols-outlined text-[28px]">terminal</span>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">OpenSSH</h3>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="status-dot active"></span><span class="text-xs text-tertiary font-bold uppercase">Running</span>
+              </div>
+            </div>
+          </div>
+          <input type="checkbox" class="ios-switch" checked>
+        </div>
+        <div class="space-y-4 relative z-10 border-t border-white/5 pt-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-xs text-on-surface-variant flex items-center gap-1 font-bold">
+              <span class="material-symbols-outlined text-[14px]">settings_ethernet</span> Listening Port
+            </label>
+            <input type="number" class="neon-input w-32 font-code" value="22">
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== CONFIG GENERATOR VIEW ==================== -->
+  <div id="view-config" class="view-section">
+    <div class="mb-8 relative z-10">
+      <h2 class="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-3xl">key</span> Secure Payload Generator
+      </h2>
+      <p class="text-on-surface-variant">Create encrypted configuration profiles for remote endpoints.</p>
+    </div>
+    
+    <div class="glass-panel rounded-xl p-8 max-w-4xl w-full relative z-10">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div class="flex flex-col gap-6">
+          <div>
+            <label class="block text-xs font-bold text-on-surface-variant mb-2">Target User</label>
+            <select id="configUserSelect" class="neon-input w-full font-body-md py-3 text-white appearance-none cursor-pointer">
+              <option value="">Select a user...</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-on-surface-variant mb-2">Server IP / Host</label>
+            <input type="text" id="configServerIp" class="neon-input w-full font-code py-3" placeholder="ej. 192.168.1.1">
+          </div>
+        </div>
+        <div class="bg-[#0f131d]/50 rounded-lg p-6 border border-white/5 flex flex-col justify-center">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs text-on-surface-variant uppercase font-bold">Encryption</span>
+            <span class="font-code text-tertiary text-sm">AES-256-GCM (Simulated)</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant uppercase font-bold">HWID Lock</span>
+            <span class="text-white text-sm font-bold">Enforced by Server</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex flex-col items-center mb-8 pb-8 border-b border-white/5">
+        <button onclick="generateConfig()" class="px-8 py-4 rounded-xl bg-gradient-to-r from-secondary to-[#5516be] text-white text-lg font-bold shadow-[0_0_15px_rgba(208,188,255,0.3)] hover:scale-105 transition-all flex items-center gap-3">
+          <span class="material-symbols-outlined">lock</span> Generate Encrypted Config
+        </button>
+      </div>
+      
+      <div id="outputBlock" class="opacity-50 transition-all duration-300">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-on-surface-variant uppercase tracking-widest font-bold">Client Payload</span>
+          <button id="copyBtn" onclick="copyConfig()" class="flex items-center gap-2 text-primary hover:text-white transition-colors text-xs font-bold py-1 px-3 rounded hover:bg-primary/10">
+            <span class="material-symbols-outlined text-[16px]">content_copy</span> Copy
+          </button>
+        </div>
+        <div class="bg-[#0a0e18]/80 border border-white/5 rounded-lg p-6 relative overflow-hidden group">
+          <div class="absolute top-0 left-0 w-1 h-full bg-primary/50 group-hover:bg-primary transition-colors"></div>
+          <pre class="font-code text-white whitespace-pre-wrap break-all"><code id="configString">Select a user and click Generate...</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Modals -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal-box glass-panel max-w-[450px]">
+    <h3 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+      <span class="material-symbols-outlined text-primary">person_add</span> Create User
+    </h3>
+    <form id="createUserForm">
+      
+      <!-- Account Type Selection -->
+      <div class="mb-6 bg-[#0f131d]/60 p-4 rounded-xl border border-white/5">
+        <label class="block text-xs font-bold text-primary tracking-wider uppercase mb-3">Account Type</label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="cursor-pointer">
+            <input type="radio" name="accountType" value="ssh" class="peer hidden" checked onchange="toggleFormFields()">
+            <div class="px-3 py-2 rounded-lg border border-white/10 text-center text-sm font-bold text-on-surface-variant peer-checked:bg-primary/20 peer-checked:text-primary peer-checked:border-primary/50 hover:bg-white/5 transition-all">
+              SSH / Dropbear
+            </div>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="accountType" value="demo" class="peer hidden" onchange="toggleFormFields()">
+            <div class="px-3 py-2 rounded-lg border border-white/10 text-center text-sm font-bold text-on-surface-variant peer-checked:bg-secondary/20 peer-checked:text-secondary peer-checked:border-secondary/50 hover:bg-white/5 transition-all">
+              Demo (SSH)
+            </div>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="accountType" value="hwid" class="peer hidden" onchange="toggleFormFields()">
+            <div class="px-3 py-2 rounded-lg border border-white/10 text-center text-sm font-bold text-on-surface-variant peer-checked:bg-tertiary/20 peer-checked:text-tertiary peer-checked:border-tertiary/50 hover:bg-white/5 transition-all">
+              HWID
+            </div>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="accountType" value="token" class="peer hidden" onchange="toggleFormFields()">
+            <div class="px-3 py-2 rounded-lg border border-white/10 text-center text-sm font-bold text-on-surface-variant peer-checked:bg-error/20 peer-checked:text-error peer-checked:border-error/50 hover:bg-white/5 transition-all">
+              Token
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Dynamic Fields Container -->
+      <div id="dynamicFields" class="space-y-4">
+        
+        <div id="field-username">
+          <label class="block text-xs text-on-surface-variant mb-2 font-bold">Username <span class="text-error">*</span></label>
+          <input type="text" id="newUsername" autocomplete="off" class="neon-input w-full" placeholder="e.g. client_01">
+        </div>
+
+        <div id="field-hwid" class="hidden">
+          <label class="block text-xs text-on-surface-variant mb-2 font-bold flex justify-between">
+            <span>Hardware ID <span class="text-error">*</span></span>
+          </label>
+          <input type="text" id="newHwid" autocomplete="off" class="neon-input w-full font-code" placeholder="A1B2-C3D4-E5F6">
+        </div>
+
+        <div id="field-password">
+          <label class="block text-xs text-on-surface-variant mb-2 font-bold">Password <span class="text-error">*</span></label>
+          <input type="password" id="newPassword" class="neon-input w-full" placeholder="********">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4" id="fields-time-limit">
+          <div id="field-days">
+            <label class="block text-xs text-on-surface-variant mb-2 font-bold">Days Valid</label>
+            <input type="number" id="newDays" value="30" min="1" class="neon-input w-full">
+          </div>
+          <div id="field-limit">
+            <label class="block text-xs text-on-surface-variant mb-2 font-bold">Connection Limit</label>
+            <input type="number" id="newLimit" value="1" min="1" class="neon-input w-full">
+          </div>
+        </div>
+        
+      </div>
+
+      <div class="flex gap-3 mt-8">
+        <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-lg border border-white/10 text-white hover:bg-white/5 transition-colors font-bold">Cancel</button>
+        <button type="submit" class="flex-1 py-3 rounded-lg bg-primary text-black font-bold hover:bg-[#c9e6ff] transition-colors shadow-[0_0_15px_rgba(137,206,255,0.3)]">Create Account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Auth
+  const token = localStorage.getItem('mivpn_token');
+  if (!token) window.location.href = 'login.html';
+  function logout() { localStorage.removeItem('mivpn_token'); window.location.href = 'login.html'; }
+
+  // Navigation SPA logic
+  function switchView(viewId, element) {
+    document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+    document.getElementById('view-' + viewId).classList.add('active');
+    
+    document.querySelectorAll('.nav-link').forEach(el => {
+      el.classList.remove('text-primary', 'font-bold', 'border-primary', 'bg-gradient-to-r', 'shadow-[inset_2px_0_10px_rgba(137,206,255,0.1)]');
+      el.classList.add('text-on-surface-variant', 'border-transparent');
+    });
+    element.classList.remove('text-on-surface-variant', 'border-transparent');
+    element.classList.add('text-primary', 'font-bold', 'border-primary', 'bg-gradient-to-r', 'shadow-[inset_2px_0_10px_rgba(137,206,255,0.1)]');
+
+    if (viewId === 'config') populateConfigDropdown();
+  }
+
+  // API Logic
+  let globalUsers = [];
+
+  async function loadUsers() {
+    try {
+      const res = await fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.status === 401) return logout();
+      const users = await res.json();
+      globalUsers = users;
+      
+      document.getElementById('stat-total-users').innerText = users.length;
+      document.getElementById('stat-active-users').innerText = users.filter(u => u.status === 'active').length;
+
+      const tbody = document.getElementById('userTableBody');
+      tbody.innerHTML = '';
+      if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-on-surface-variant">No secure profiles found.</td></tr>`;
+        return;
+      }
+
+      users.forEach(u => {
+        const date = new Date(u.expiration_date).toLocaleDateString();
+        const encodedUsername = encodeURIComponent(u.username).replaceAll("'", "%27");
+        const badgeClass = u.status === 'active' ? 'bg-tertiary/10 text-tertiary' : 'bg-error/10 text-error';
+        const badgeDot = u.status === 'active' ? 'bg-tertiary' : 'bg-error';
+        
+        tbody.innerHTML += `
+          <tr class="table-row-hover transition-colors">
+            <td class="py-4 px-6 font-bold text-white"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">${escHtml(u.username.charAt(0).toUpperCase())}</div>${escHtml(u.username)}</div></td>
+            <td class="py-4 px-6 text-on-surface-variant">${date}</td>
+            <td class="py-4 px-6 font-code text-on-surface-variant text-xs">${u.hwid ? escHtml(u.hwid.substring(0,12))+'...' : 'No binding'}</td>
+            <td class="py-4 px-6 text-on-surface-variant">${u.max_connections}</td>
+            <td class="py-4 px-6">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${badgeClass}">
+                <span class="w-1.5 h-1.5 rounded-full ${badgeDot}"></span> ${escHtml(u.status.toUpperCase())}
+              </span>
+            </td>
+            <td class="py-4 px-6 text-right">
+              <button onclick="deleteUser(decodeURIComponent('${encodedUsername}'))" class="text-error hover:text-white hover:bg-error px-3 py-1.5 rounded transition-colors text-xs font-bold uppercase">Revoke</button>
+            </td>
+          </tr>
+        `;
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function deleteUser(username) {
+    if (!confirm('¿Revocar el acceso de ' + username + '? La cuenta permanecerá registrada.')) return;
+    try {
+      const response = await fetch('/api/users/' + encodeURIComponent(username) + '/revoke', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+      const result = await response.json(); if (!response.ok) throw Error(result.error);
+      loadUsers();
+    } catch (e) { alert(e.message); }
+  }
+
+  // Modals
+  const modal = document.getElementById('createModal');
+  function openModal() { modal.classList.add('active'); }
+  function closeModal() { modal.classList.remove('active'); document.getElementById('createUserForm').reset(); }
+
+  function toggleFormFields() {
+    const type = document.querySelector('input[name="accountType"]:checked').value;
+    const fUser = document.getElementById('field-username');
+    const fHwid = document.getElementById('field-hwid');
+    const fPass = document.getElementById('field-password');
+    const fTimeLimit = document.getElementById('fields-time-limit');
+
+    // Reset visibility
+    fUser.classList.remove('hidden');
+    fHwid.classList.add('hidden');
+    fPass.classList.remove('hidden');
+    fTimeLimit.classList.remove('hidden');
+    
+    document.getElementById('newUsername').placeholder = "e.g. client_01";
+
+    if (type === 'hwid') {
+      fHwid.classList.remove('hidden');
+      fPass.classList.add('hidden');
+    } else if (type === 'demo') {
+      fPass.classList.add('hidden');
+      fTimeLimit.classList.add('hidden');
+      document.getElementById('newUsername').placeholder = "Suffix (e.g. juan -> demo-juan)";
+    }
+  }
+
+  document.getElementById('createUserForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    const type = document.querySelector('input[name="accountType"]:checked').value;
+    const userEl = document.getElementById('newUsername');
+    const hwidEl = document.getElementById('newHwid');
+    const passEl = document.getElementById('newPassword');
+    
+    let user = userEl.value.trim();
+    let pass = passEl.value;
+    let hwidVal = null;
+    let limit = parseInt(document.getElementById('newLimit').value) || 1;
+    const expDate = new Date();
+    
+    if (type === 'hwid') {
+      hwidVal = hwidEl.value.trim();
+      if (!user) return alert("Username is required");
+      if (!hwidVal) return alert("Hardware ID is required");
+      pass = Array.from(crypto.getRandomValues(new Uint8Array(18)), b => b.toString(16).padStart(2,'0')).join(''); // Auto-generate password for HWID
+      expDate.setDate(expDate.getDate() + parseInt(document.getElementById('newDays').value));
+    } else if (type === 'demo') {
+      if (!user) return alert("Username suffix is required for Demo");
+      user = user.startsWith('demo-') ? user : 'demo-' + user;
+      pass = Array.from(crypto.getRandomValues(new Uint8Array(18)), b => b.toString(16).padStart(2,'0')).join(''); // Random 8-char password
+      limit = 2; // Fixed 2 connections
+      expDate.setHours(expDate.getHours() + 6); // +6 hours expiration
+    } else {
+      if (!user) return alert("Username is required");
+      if (!pass) return alert("Password is required");
+      if (type === 'token') {
+        user = "TKN-" + user; 
+      }
+      expDate.setDate(expDate.getDate() + parseInt(document.getElementById('newDays').value));
+    }
+
+    const payload = { 
+      username: user, 
+      password: pass, 
+      expiration_date: expDate.toISOString(), 
+      max_connections: limit 
+    };
+    if (hwidVal) payload.hwid = hwidVal;
+
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    }).then(res => {
+      if(!res.ok) {
+        res.json().then(err => alert("Error: " + err.error));
+        return;
+      }
+      closeModal(); 
+      loadUsers(); 
+    });
+  });
+
+  // Config Generator Logic
+  function populateConfigDropdown() {
+    const select = document.getElementById('configUserSelect');
+    select.innerHTML = '<option value="">Select a user...</option>';
+    globalUsers.forEach(u => {
+      select.innerHTML += `<option value="${escHtml(u.username)}">${escHtml(u.username)} [${escHtml(u.status.toUpperCase())}]</option>`;
+    });
+  }
+
+  async function generateConfig() {
+    const user = document.getElementById('configUserSelect').value;
+    const host = document.getElementById('configServerIp').value.trim();
+    if (!user || !host) return alert('Selecciona una cuenta e indica el host SSH.');
+    try {
+      const response = await fetch('/api/users/' + encodeURIComponent(user) + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ host }) });
+      const result = await response.json(); if (!response.ok) throw Error(result.error);
+      document.getElementById('outputBlock').style.opacity = '1';
+      document.getElementById('configString').innerText = result.data;
+    } catch (e) { alert(e.message); }
+  }
+
+  function copyConfig() {
+    const txt = document.getElementById('configString').innerText;
+    navigator.clipboard.writeText(txt).then(() => {
+      const btn = document.getElementById('copyBtn');
+      const oldHtml = btn.innerHTML;
+      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] text-tertiary">check</span> <span class="text-tertiary">Copied!</span>`;
+      setTimeout(() => btn.innerHTML = oldHtml, 2000);
+    });
+  }
+
+  function escHtml(value) { return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
+  // Init
+  loadUsers();
+</script>
+</body>
+</html>

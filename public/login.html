@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiVPN Cloud - Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --glass-bg: rgba(25, 30, 45, 0.6);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --primary: #0ea5e9;
+      --primary-glow: rgba(14, 165, 233, 0.5);
+      --accent: #8b5cf6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg-color);
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.15), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .login-container {
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      padding: 50px 40px;
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+      animation: floatIn 0.8s ease-out forwards;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    @keyframes floatIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-container h1 {
+      font-weight: 800;
+      font-size: 32px;
+      margin: 0 0 8px 0;
+      background: linear-gradient(135deg, #38bdf8, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .login-container p {
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      font-weight: 300;
+      font-size: 15px;
+    }
+
+    .input-group {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 16px;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      background: rgba(0,0,0,0.2);
+      color: white;
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      box-sizing: border-box;
+      transition: all 0.3s ease;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 15px var(--primary-glow);
+      background: rgba(0,0,0,0.4);
+    }
+
+    button {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 10px;
+      box-shadow: 0 10px 20px -10px var(--primary-glow);
+    }
+
+    button:hover { 
+      transform: translateY(-2px);
+      box-shadow: 0 15px 25px -10px var(--primary-glow);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .error { 
+      color: #fb7185; 
+      background: rgba(251, 113, 133, 0.1);
+      border: 1px solid rgba(251, 113, 133, 0.2);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px; 
+      font-size: 14px;
+      display: none; 
+      animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      50% { transform: translateX(5px); }
+      75% { transform: translateX(-5px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h1>MiVPN Cloud</h1>
+    <p>Portal de Administración Seguro</p>
+    
+    <div id="errorMsg" class="error">Usuario o clave incorrectos</div>
+    
+    <form id="loginForm">
+      <div class="input-group">
+        <input type="text" id="username" placeholder="Usuario" required autocomplete="off">
+      </div>
+      <div class="input-group">
+        <input type="password" id="password" placeholder="Contraseña" required>
+      </div>
+      <button type="submit">Autenticar Sistema</button>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const u = document.getElementById('username').value;
+      const p = document.getElementById('password').value;
+      const errorDiv = document.getElementById('errorMsg');
+      const btn = document.querySelector('button');
+      
+      btn.innerText = 'Verificando...';
+      btn.style.opacity = '0.8';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          localStorage.setItem('mivpn_token', data.token);
+          if (data.needsChange) {
+            window.location.href = 'change-password.html';
+          } else {
+            window.location.href = 'index.html';
+          }
+        } else {
+          errorDiv.style.display = 'block';
+          errorDiv.innerText = data.error || 'Credenciales denegadas';
+          // Trigger shake animation again by cloning and replacing
+          errorDiv.style.animation = 'none';
+          errorDiv.offsetHeight; /* trigger reflow */
+          errorDiv.style.animation = null; 
+        }
+      } catch (err) {
+        errorDiv.style.display = 'block';
+        errorDiv.innerText = 'Error de conexión con el nodo';
+      } finally {
+        btn.innerText = 'Autenticar Sistema';
+        btn.style.opacity = '1';
+      }
+    });
+  </script>
+</body>
+</html>
