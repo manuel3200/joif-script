@@ -41,6 +41,8 @@ if [ "$SUCCESS" = "1" ]; then
     echo -e " \033[1;33m[*] Reiniciando panel web y servicios...\033[0m"
     systemctl restart joif 2>/dev/null || true
     systemctl is-active --quiet joif-proxy && systemctl restart joif-proxy 2>/dev/null || true
+    systemctl is-active --quiet badvpn-7300 && systemctl restart badvpn-7300 2>/dev/null || true
+    systemctl is-active --quiet badvpn-7200 && systemctl restart badvpn-7200 2>/dev/null || true
     
     echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo -e " \033[1;32m✅ ACTUALIZACIÓN APLICADA CON ÉXITO EN 1 SEGUNDO ✅\033[0m"

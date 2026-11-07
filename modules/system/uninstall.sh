@@ -60,7 +60,7 @@ if [[ ! "$purge_all" =~ ^[Nn]$ ]]; then
 fi
 
 echo -e "\n${blue}[1/4] Deteniendo y deshabilitando servicios...${plain}"
-for svc in joif joif-proxy joif-limitador joif-api badvpn-dual badvpn; do
+for svc in joif joif-proxy joif-limitador joif-api badvpn-dual badvpn badvpn-7300 badvpn-7200; do
     systemctl stop "$svc" 2>/dev/null
     systemctl disable "$svc" 2>/dev/null
     rm -f "/etc/systemd/system/${svc}.service"

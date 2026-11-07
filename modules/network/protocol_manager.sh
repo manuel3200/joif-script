@@ -190,7 +190,7 @@ EOF
             echo -e "   ${white}Puertos 7300 y 7200 para Juegos Online y VoIP${plain}"
             echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
 
-            if pgrep -x "badvpn-udpgw" >/dev/null || systemctl is-active --quiet badvpn-dual; then
+            if systemctl is-active --quiet badvpn-7300 || systemctl is-active --quiet badvpn-7200 || pgrep -x "badvpn-udpgw" >/dev/null; then
                 echo -e " ${green}● BadVPN UDP-GW ya se encuentra ACTIVO en puertos 7300 y 7200.${plain}\n"
                 echo -e " ${green}[1]${plain} > 🔄 Reiniciar BadVPN"
                 echo -e " ${red}[2]${plain} > 🛑 Detener BadVPN y Liberar Puertos"
@@ -200,8 +200,8 @@ EOF
                 case $bad_action in
                     2)
                         echo -e "\n${yellow}[*] Deteniendo BadVPN...${plain}"
-                        systemctl stop badvpn-dual 2>/dev/null || true
-                        systemctl disable badvpn-dual 2>/dev/null || true
+                        systemctl stop badvpn-7300 badvpn-7200 badvpn-dual 2>/dev/null || true
+                        systemctl disable badvpn-7300 badvpn-7200 badvpn-dual 2>/dev/null || true
                         killall -9 badvpn-udpgw 2>/dev/null || true
                         pkill -9 -f "badvpn" 2>/dev/null || true
                         echo -e "${green}✅ BadVPN detenido y puertos liberados.${plain}"
@@ -213,13 +213,20 @@ EOF
                 esac
             fi
 
-            if [ -f "/usr/local/bin/badvpn-udpgw" ] || [ -f "/usr/bin/badvpn-udpgw" ]; then
-                echo -e " ${green}✔ Binario badvpn-udpgw ya se encuentra instalado.${plain}"
-            else
+            BADVPN_BIN=""
+            if [ -x "/usr/local/bin/badvpn-udpgw" ]; then
+                BADVPN_BIN="/usr/local/bin/badvpn-udpgw"
+            elif [ -x "/usr/bin/badvpn-udpgw" ]; then
+                BADVPN_BIN="/usr/bin/badvpn-udpgw"
+            elif command -v badvpn-udpgw &>/dev/null; then
+                BADVPN_BIN=$(command -v badvpn-udpgw)
+            fi
+
+            if [ -z "$BADVPN_BIN" ]; then
                 echo -e " ${yellow}[*] Preparando dependencias de compilación...${plain}"
                 export DEBIAN_FRONTEND=noninteractive
                 export NEEDRESTART_MODE=a
-                apt-get update -qq && apt-get install -y -qq cmake make gcc g++ build-essential unzip screen psmisc > /dev/null 2>&1
+                apt-get update -qq && apt-get install -y -qq cmake make gcc g++ build-essential unzip > /dev/null 2>&1
 
                 echo -e " ${yellow}[*] Descargando y compilando BadVPN...${plain}"
                 cd /tmp
@@ -232,34 +239,65 @@ EOF
                 make install > /dev/null 2>&1
                 cd /root
                 rm -rf /tmp/badvpn* 2>/dev/null
+                BADVPN_BIN="/usr/local/bin/badvpn-udpgw"
             fi
 
-            cat << 'EOF' > /bin/JOIF-badvpn
-#!/bin/bash
-killall badvpn-udpgw 2>/dev/null
-screen -dmS badvpn nice -n -15 /usr/local/bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 1000 --max-connections-for-client 10
-screen -dmS badUDP72 nice -n -15 /usr/local/bin/badvpn-udpgw --listen-addr 127.0.0.1:7200 --max-clients 1000 --max-connections-for-client 10
-EOF
-            chmod +x /bin/JOIF-badvpn
+            if [ ! -f "$BADVPN_BIN" ]; then
+                echo -e "\n${red}❌ Error: No se pudo compilar o encontrar el binario badvpn-udpgw.${plain}"
+                pause
+                continue
+            fi
 
-            cat << 'EOF' > /etc/systemd/system/badvpn-dual.service
+            chmod +x "$BADVPN_BIN"
+            ln -sf "$BADVPN_BIN" /usr/local/bin/badvpn-udpgw 2>/dev/null || true
+            ln -sf "$BADVPN_BIN" /usr/bin/badvpn-udpgw 2>/dev/null || true
+            echo -e " ${green}✔ Binario badvpn-udpgw listo (${BADVPN_BIN}).${plain}"
+
+            # Limpiar servicio legacy con screen
+            systemctl stop badvpn-dual badvpn-7300 badvpn-7200 2>/dev/null || true
+            systemctl disable badvpn-dual 2>/dev/null || true
+            rm -f /etc/systemd/system/badvpn-dual.service /bin/JOIF-badvpn 2>/dev/null || true
+            killall -9 badvpn-udpgw 2>/dev/null || true
+            pkill -9 -f "badvpn" 2>/dev/null || true
+
+            # Crear servicios nativos limpios en systemd (sin dependencia de screen ni tty)
+            cat << EOF > /etc/systemd/system/badvpn-7300.service
 [Unit]
-Description=BadVPN Dual Channel Launcher (7300 & 7200)
+Description=BadVPN UDP Gateway (Port 7300)
 After=network.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/JOIF-badvpn
-ExecStop=/usr/bin/killall badvpn-udpgw
-KillMode=none
+Type=simple
+User=root
+ExecStart=$BADVPN_BIN --listen-addr 127.0.0.1:7300 --max-clients 1000 --max-connections-for-client 10
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+            cat << EOF > /etc/systemd/system/badvpn-7200.service
+[Unit]
+Description=BadVPN UDP Gateway (Port 7200)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=$BADVPN_BIN --listen-addr 127.0.0.1:7200 --max-clients 1000 --max-connections-for-client 10
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
             systemctl daemon-reload
-            systemctl enable badvpn-dual >/dev/null 2>&1
-            systemctl restart badvpn-dual
+            systemctl enable badvpn-7300 badvpn-7200 >/dev/null 2>&1
+            systemctl restart badvpn-7300 badvpn-7200
 
             iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT 2>/dev/null
             iptables -I INPUT 1 -p udp --dport 7200 -j ACCEPT 2>/dev/null
@@ -269,7 +307,14 @@ EOF
             fi
             netfilter-persistent save 2>/dev/null || true
 
-            echo -e "\n${green}✅ BadVPN Dual Channel Activo en puertos 7300 y 7200 UDP.${plain}"
+            sleep 1
+            if systemctl is-active --quiet badvpn-7300 && systemctl is-active --quiet badvpn-7200; then
+                echo -e "\n${green}✅ BadVPN Dual Channel Activo y Operativo en puertos 7300 y 7200 UDP.${plain}"
+            else
+                echo -e "\n${red}❌ No se pudo iniciar BadVPN. Detalle de logs del sistema:${plain}"
+                journalctl -u badvpn-7300 -n 6 --no-pager 2>/dev/null
+                journalctl -u badvpn-7200 -n 6 --no-pager 2>/dev/null
+            fi
             pause
             ;;
 
@@ -382,7 +427,7 @@ EOF
             fi
 
             printf "  • %-28s " "BadVPN UDP-GW (7300/7200)"
-            if pgrep -x "badvpn-udpgw" >/dev/null; then
+            if systemctl is-active --quiet badvpn-7300 || pgrep -x "badvpn-udpgw" >/dev/null; then
                 echo -e "${green}[ACTIVO - ONLINE]${plain}"
             else
                 echo -e "${red}[INACTIVO]${plain}"
