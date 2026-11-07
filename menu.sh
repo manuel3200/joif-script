@@ -1244,7 +1244,7 @@ EOF
         read -p "$(echo -e ${white}"  Bandera emoji [$auto_flag]: "${plain})" input_flag
         local vps_flag="${input_flag:-$auto_flag}"
 
-        read -p "$(echo -e ${white}"  Límite diario de cuentas [100]: "${plain})" input_limit
+        read -p "$(echo -e ${white}"  Capacidad máxima de usuarios (límite total de la máquina) [100]: "${plain})" input_limit
         local vps_limit="${input_limit:-100}"
     else
         [ -z "$portal_url" ] && portal_url="https://shop.joif.net"
@@ -1287,6 +1287,9 @@ EOF
           \"api_url\": \"http://${ip_detectada}:3000\",
           \"api_secret\": \"${api_key_local}\",
           \"daily_limit\": ${vps_limit:-100},
+          \"capacidadMaxima\": ${vps_limit:-100},
+          \"capacidad_maxima\": ${vps_limit:-100},
+          \"max_users\": ${vps_limit:-100},
           \"is_active\": 1
         }" 2>/dev/null || echo '{"error":"Error de conexión con el portal"}')
 
