@@ -36,6 +36,7 @@ function createProxyServer(options = {}) {
   }
   const listenPort = options.proxyPort || PROXY_PORT;
   const defaultSshPort = options.sshPort || SSH_PORT;
+  const apiPort = options.apiPort || 3000;
 
   const server = net.createServer((clientSocket) => {
     // 1. Optimización para latencia cero en juegos (Desactivar Nagle)
@@ -80,6 +81,26 @@ function createProxyServer(options = {}) {
 
       const headerText = buffer.subarray(0, headerEnd).toString('latin1');
       const remainingBytes = buffer.subarray(headerEnd + delimiterLength);
+
+      // Si es una petición HTTP a la API o CheckUser, reenviar al backend Node.js (3000)
+      const firstLine = headerText.split(/\r?\n/)[0] || '';
+      if (/^(GET|POST|PUT|DELETE|OPTIONS|HEAD)\s+(\/api\/|\/check|\/health)/i.test(firstLine)) {
+        const apiSocket = net.createConnection({ port: apiPort, host: '127.0.0.1' }, () => {
+          apiSocket.write(buffer);
+          clientSocket.pipe(apiSocket);
+          apiSocket.pipe(clientSocket);
+        });
+        apiSocket.on('error', () => {
+          try {
+            clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nAPI local inalcanzable.\r\n');
+            clientSocket.destroy();
+          } catch (_) {}
+        });
+        clientSocket.on('error', () => {
+          try { apiSocket.destroy(); } catch (_) {}
+        });
+        return;
+      }
 
       // 3. Extraer cabeceras relevantes
       let hwid = null;

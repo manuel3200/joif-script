@@ -206,3 +206,43 @@ test('proxy validates HWID against DB: accepts active and rejects invalid/expire
   assert.ok(expiredBuf.includes('403 Forbidden'));
   assert.ok(expiredBuf.includes('Cuenta suspendida o expirada'));
 });
+
+test('proxy forwards HTTP API requests (/api/ and /check) to local API port', async (t) => {
+  const mockApi = net.createServer((sock) => {
+    sock.on('data', (d) => {
+      const text = d.toString();
+      if (text.includes('/api/users') || text.includes('/check')) {
+        sock.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n["testuser"]');
+      }
+    });
+  });
+
+  const apiPort = await new Promise((res) => {
+    mockApi.listen(0, '127.0.0.1', () => res(mockApi.address().port));
+  });
+
+  const proxy = createProxyServer({ apiPort, sshPort: 22 });
+  const proxyPort = await new Promise((res) => {
+    proxy.listen(0, '127.0.0.1', () => res(proxy.address().port));
+  });
+
+  t.after(() => {
+    proxy.close();
+    mockApi.close();
+  });
+
+  const client = net.createConnection({ port: proxyPort, host: '127.0.0.1' });
+  let buf = '';
+  await new Promise((res) => client.on('connect', res));
+  client.on('data', (d) => { buf += d.toString(); });
+  client.write('GET /check HTTP/1.1\r\nHost: localhost\r\n\r\n');
+
+  await new Promise((res) => {
+    const check = () => { if (buf.includes('["testuser"]')) res(); else setTimeout(check, 10); };
+    check();
+  });
+
+  assert.ok(buf.startsWith('HTTP/1.1 200 OK'));
+  assert.ok(buf.includes('["testuser"]'));
+  client.destroy();
+});
