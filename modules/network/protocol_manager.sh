@@ -167,9 +167,18 @@ EOF
             systemctl enable joif-proxy >/dev/null 2>&1
             systemctl restart joif-proxy
 
-            iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT 2>/dev/null
-            if command -v ufw &>/dev/null; then ufw allow 80/tcp &>/dev/null; fi
-            netfilter-persistent save 2>/dev/null || true
+            if command -v iptables &>/dev/null; then
+                iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT >/dev/null 2>&1 || true
+            fi
+            if command -v ufw &>/dev/null; then
+                ufw allow 80/tcp >/dev/null 2>&1 || true
+            fi
+            if command -v netfilter-persistent &>/dev/null; then
+                netfilter-persistent save >/dev/null 2>&1 || true
+            elif command -v iptables-save &>/dev/null; then
+                mkdir -p /etc/iptables 2>/dev/null || true
+                iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+            fi
 
             sleep 2
             if systemctl is-active --quiet joif-proxy; then
@@ -299,13 +308,20 @@ EOF
             systemctl enable badvpn-7300 badvpn-7200 >/dev/null 2>&1
             systemctl restart badvpn-7300 badvpn-7200
 
-            iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT 2>/dev/null
-            iptables -I INPUT 1 -p udp --dport 7200 -j ACCEPT 2>/dev/null
-            if command -v ufw &>/dev/null; then
-                ufw allow 7300/udp &>/dev/null
-                ufw allow 7200/udp &>/dev/null
+            if command -v iptables &>/dev/null; then
+                iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT >/dev/null 2>&1 || true
+                iptables -I INPUT 1 -p udp --dport 7200 -j ACCEPT >/dev/null 2>&1 || true
             fi
-            netfilter-persistent save 2>/dev/null || true
+            if command -v ufw &>/dev/null; then
+                ufw allow 7300/udp >/dev/null 2>&1 || true
+                ufw allow 7200/udp >/dev/null 2>&1 || true
+            fi
+            if command -v netfilter-persistent &>/dev/null; then
+                netfilter-persistent save >/dev/null 2>&1 || true
+            elif command -v iptables-save &>/dev/null; then
+                mkdir -p /etc/iptables 2>/dev/null || true
+                iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+            fi
 
             sleep 1
             if systemctl is-active --quiet badvpn-7300 && systemctl is-active --quiet badvpn-7200; then
@@ -376,9 +392,18 @@ EOF
             systemctl enable stunnel4 >/dev/null 2>&1
             systemctl restart stunnel4
 
-            iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT 2>/dev/null
-            if command -v ufw &>/dev/null; then ufw allow 443/tcp &>/dev/null; fi
-            netfilter-persistent save 2>/dev/null || true
+            if command -v iptables &>/dev/null; then
+                iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1 || true
+            fi
+            if command -v ufw &>/dev/null; then
+                ufw allow 443/tcp >/dev/null 2>&1 || true
+            fi
+            if command -v netfilter-persistent &>/dev/null; then
+                netfilter-persistent save >/dev/null 2>&1 || true
+            elif command -v iptables-save &>/dev/null; then
+                mkdir -p /etc/iptables 2>/dev/null || true
+                iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+            fi
 
             echo -e "\n${green}✅ Stunnel SSL 443 Activo reenviando a WebSocket 80.${plain}"
             pause

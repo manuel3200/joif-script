@@ -86,7 +86,7 @@ fi
 
 # Animación de paquetes
 apt-get update -y > /dev/null 2>&1
-paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq" "psmisc")
+paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq" "psmisc" "iptables")
 for pkg in "${paquetes[@]}"; do
     apt-get install -y -qq "$pkg" > /dev/null 2>&1
     if [ $? -eq 0 ]; then
@@ -208,13 +208,26 @@ systemctl enable joif > /dev/null 2>&1
 systemctl restart joif
 
 # Liberar puertos en firewall del sistema (Oracle Cloud / AWS / iptables / ufw)
-for p in 22 80 443 3000 7300; do
-    iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT 2>/dev/null
-    ufw allow "$p"/tcp 2>/dev/null
-done
-iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT 2>/dev/null
-ufw allow 7300/udp 2>/dev/null
-netfilter-persistent save 2>/dev/null || (mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4 2>/dev/null || true)
+if command -v iptables &>/dev/null; then
+    for p in 22 80 443 3000 7300; do
+        iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT >/dev/null 2>&1 || true
+    done
+    iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT >/dev/null 2>&1 || true
+fi
+
+if command -v ufw &>/dev/null; then
+    for p in 22 80 443 3000 7300; do
+        ufw allow "$p"/tcp >/dev/null 2>&1 || true
+    done
+    ufw allow 7300/udp >/dev/null 2>&1 || true
+fi
+
+if command -v netfilter-persistent &>/dev/null; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+elif command -v iptables-save &>/dev/null; then
+    mkdir -p /etc/iptables 2>/dev/null || true
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+fi
 
 # Compatibilidad shells y OpenSSH Password Authentication (Ubuntu 24 / Oracle Cloud)
 grep -qxF '/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells

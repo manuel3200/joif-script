@@ -1119,17 +1119,24 @@ EOF
     echo -e "  ${green}✔ OpenSSH configurado con soporte de contraseñas.${plain}"
 
     echo -e "\n${blue}[3/5] Abriendo puertos en el Firewall del VPS (Oracle / iptables / ufw)...${plain}"
-    for p in 22 80 443 3000 7300; do
-        iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT 2>/dev/null
-        if command -v ufw &>/dev/null; then ufw allow "$p"/tcp &>/dev/null; fi
-    done
-    iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT 2>/dev/null
-    if command -v ufw &>/dev/null; then ufw allow 7300/udp &>/dev/null; fi
+    if command -v iptables &>/dev/null; then
+        for p in 22 80 443 3000 7300; do
+            iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT >/dev/null 2>&1 || true
+        done
+        iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT >/dev/null 2>&1 || true
+    fi
+
+    if command -v ufw &>/dev/null; then
+        for p in 22 80 443 3000 7300; do
+            ufw allow "$p"/tcp >/dev/null 2>&1 || true
+        done
+        ufw allow 7300/udp >/dev/null 2>&1 || true
+    fi
 
     if command -v netfilter-persistent &>/dev/null; then
-        netfilter-persistent save &>/dev/null
+        netfilter-persistent save >/dev/null 2>&1 || true
     elif command -v iptables-save &>/dev/null; then
-        mkdir -p /etc/iptables
+        mkdir -p /etc/iptables 2>/dev/null || true
         iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
     fi
     echo -e "  ${green}✔ Puertos 22 (SSH), 80 (WS Proxy), 443 (SSL), 3000 (API) y 7300 (UDPGW) abiertos.${plain}"
