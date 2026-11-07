@@ -1061,69 +1061,107 @@ menu_herramientas() {
     done
 }
 
-autoconfigurar_portal_web() {
-    clear
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e "     ${yellow}⚡ AUTOCONFIGURACIÓN PARA PORTAL WEB JOIF ⚡${plain}"
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${white}Esta herramienta prepara y optimiza este VPS para recibir${plain}"
-    echo -e " ${white}cuentas automáticas desde tu Portal Web Central.${plain}"
-    echo -e ""
-    echo -e " ${cyan}Pasos automáticos:${plain}"
-    echo -e "  ${green}1.${plain} Habilitar PasswordAuthentication y /bin/false en SSH"
-    echo -e "  ${green}2.${plain} Desbloquear Firewall (Puertos 22, 80, 443, 3000, 7300)"
-    echo -e "  ${green}3.${plain} Configurar API_KEY=joif2026 y reiniciar servicio joif"
-    echo -e "  ${green}4.${plain} Testear API local en http://127.0.0.1:3000"
-    echo -e "  ${green}5.${plain} (Opcional) Vincular y registrar el VPS en el Portal Central"
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e ""
-    read -p "$(echo -e ${yellow}"¿Deseas iniciar la autoconfiguración ahora? [S/n]: "${plain})" iniciar_auto
-    if [[ "$iniciar_auto" =~ ^[Nn]$ ]]; then
-        return
+ejecutar_autolink() {
+    local portal_arg="$1"
+    local token_arg="$2"
+    local name_arg="$3"
+    local force_cli="$4"
+    local is_cli=0
+    if [ "$force_cli" = "cli" ] || [ -n "$token_arg" ]; then
+        is_cli=1
     fi
 
-    echo -e "\n${blue}[1/5] Detectando red y dominio...${plain}"
-    IP_DETECTADA=$(curl -s --connect-timeout 4 https://ifconfig.me 2>/dev/null || curl -s --connect-timeout 4 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-    if [ -z "$IP_DETECTADA" ]; then IP_DETECTADA="127.0.0.1"; fi
+    if [ "$is_cli" -eq 1 ]; then
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "   ${yellow}⚡ JOIF CLOUD - VINCULACIÓN AUTOMÁTICA (AUTO-LINK CLI) ⚡${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    else
+        clear
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "     ${yellow}⚡ AUTOCONFIGURACIÓN Y VINCULACIÓN CON PORTAL WEB ⚡${plain}"
+        echo -e "         ${white}Compatible con shop.joif.net y sv-free.joif.net${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ${white}Esta herramienta prepara y optimiza este VPS para recibir${plain}"
+        echo -e " ${white}cuentas automáticas desde tu Tienda Web o Portal Central.${plain}"
+        echo -e ""
+        echo -e " ${cyan}Pasos automáticos:${plain}"
+        echo -e "  ${green}1.${plain} Habilitar PasswordAuthentication y /bin/false en SSH"
+        echo -e "  ${green}2.${plain} Desbloquear Firewall (Puertos 22, 80, 443, 3000, 7300)"
+        echo -e "  ${green}3.${plain} Configurar API_KEY=joif2026 y verificar servicio Node.js"
+        echo -e "  ${green}4.${plain} Autodetectar IP pública, país y bandera geográfica"
+        echo -e "  ${green}5.${plain} Enviar registro seguro con Handshake de Retorno"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e ""
+        read -p "$(echo -e ${yellow}"¿Deseas iniciar la autoconfiguración ahora? [S/n]: "${plain})" iniciar_auto
+        if [[ "$iniciar_auto" =~ ^[Nn]$ ]]; then
+            return
+        fi
+    fi
 
-    DOMINIO_DEFAULT=""
+    # 1. Detección de IP Pública
+    echo -e "\n${blue}[1/5] Detectando red y geolocalización del servidor...${plain}"
+    local ip_detectada=$(curl -s --connect-timeout 4 https://ifconfig.me 2>/dev/null || curl -s --connect-timeout 4 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$ip_detectada" ]; then ip_detectada="127.0.0.1"; fi
+
+    local dominio_default=""
     if [ -f "/root/.JOIF_domain" ]; then
-        DOMINIO_DEFAULT=$(cat /root/.JOIF_domain 2>/dev/null | tr -d '\r\n ')
+        dominio_default=$(cat /root/.JOIF_domain 2>/dev/null | tr -d '\r\n ')
     fi
-    if [ -z "$DOMINIO_DEFAULT" ]; then
-        DOMINIO_DEFAULT="$IP_DETECTADA"
+    if [ -z "$dominio_default" ]; then
+        dominio_default="$ip_detectada"
     fi
 
-    echo -e "  • IP Pública detectada : ${green}$IP_DETECTADA${plain}"
-    echo -e "  • Dominio actual       : ${yellow}$DOMINIO_DEFAULT${plain}"
-    read -p "$(echo -e ${white}"  Presiona ENTER para usar este dominio o escribe uno nuevo: "${plain})" DOMINIO_INPUT
-    DOMINIO_FINAL="${DOMINIO_INPUT:-$DOMINIO_DEFAULT}"
-    echo "$DOMINIO_FINAL" > /root/.JOIF_domain
+    # Geolocalización por IP
+    local geo_json=$(curl -s --connect-timeout 4 "http://ip-api.com/json/${ip_detectada}" 2>/dev/null || echo "{}")
+    local auto_code=$(echo "$geo_json" | grep -o '"countryCode":"[^"]*' | cut -d'"' -f4)
+    local auto_country=$(echo "$geo_json" | grep -o '"country":"[^"]*' | cut -d'"' -f4)
+    [ -z "$auto_code" ] && auto_code="US"
+    [ -z "$auto_country" ] && auto_country="Estados Unidos"
 
-    echo -e "\n${blue}[2/5] Optimizando OpenSSH y shells del sistema (Ubuntu / Oracle Cloud)...${plain}"
-    grep -qxF '/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
+    local auto_flag="🌐"
+    if command -v node &>/dev/null; then
+        auto_flag=$(node -e "const c='${auto_code}'.toUpperCase(); if(c.length===2){console.log(String.fromCodePoint(...[...c].map(x=>0x1F1E6 + x.charCodeAt(0) - 65)));}else{console.log('🌐');}" 2>/dev/null || echo "🌐")
+    fi
 
-    mkdir -p /etc/ssh/sshd_config.d
+    echo -e "  • IP Pública detectada : ${green}$ip_detectada${plain}"
+    echo -e "  • País detectado       : ${green}$auto_flag $auto_country ($auto_code)${plain}"
+
+    local dominio_final="$dominio_default"
+    if [ "$is_cli" -eq 0 ]; then
+        read -p "$(echo -e ${white}"  Dominio o Host a mostrar [$dominio_default]: "${plain})" dom_input
+        if [ -n "$dom_input" ]; then
+            dominio_final="$dom_input"
+        fi
+    fi
+    echo "$dominio_final" > /root/.JOIF_domain 2>/dev/null || true
+
+    # 2. Optimización OpenSSH
+    echo -e "\n${blue}[2/5] Optimizando OpenSSH y shells del sistema (Ubuntu / Oracle / AWS)...${plain}"
+    grep -qxF '/bin/false' /etc/shells 2>/dev/null || echo '/bin/false' >> /etc/shells
+
+    mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
     cat << 'EOF' > /etc/ssh/sshd_config.d/01-password-auth.conf
 PasswordAuthentication yes
 KbdInteractiveAuthentication yes
 PermitEmptyPasswords no
 EOF
-    sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config 2>/dev/null
-    sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config 2>/dev/null
-    echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
-    sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config 2>/dev/null
-    echo "ClientAliveCountMax 2" >> /etc/ssh/sshd_config
+    sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config 2>/dev/null || true
+    sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config 2>/dev/null || true
+    echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config 2>/dev/null || true
+    sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config 2>/dev/null || true
+    echo "ClientAliveCountMax 2" >> /etc/ssh/sshd_config 2>/dev/null || true
 
-    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
-    echo -e "  ${green}✔ OpenSSH configurado con soporte de contraseñas.${plain}"
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+    echo -e "  ${green}✔ OpenSSH configurado con soporte de contraseñas y keepalive.${plain}"
 
-    echo -e "\n${blue}[3/5] Abriendo puertos en el Firewall del VPS (Oracle / iptables / ufw)...${plain}"
+    # 3. Cortafuegos (iptables / ufw)
+    echo -e "\n${blue}[3/5] Abriendo puertos en Firewall (Puertos 22, 80, 443, 3000, 7300)...${plain}"
     if command -v iptables &>/dev/null; then
         for p in 22 80 443 3000 7300; do
             iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT >/dev/null 2>&1 || true
         done
         iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT >/dev/null 2>&1 || true
+        iptables -I INPUT 1 -p udp --dport 7200 -j ACCEPT >/dev/null 2>&1 || true
     fi
 
     if command -v ufw &>/dev/null; then
@@ -1131,6 +1169,7 @@ EOF
             ufw allow "$p"/tcp >/dev/null 2>&1 || true
         done
         ufw allow 7300/udp >/dev/null 2>&1 || true
+        ufw allow 7200/udp >/dev/null 2>&1 || true
     fi
 
     if command -v netfilter-persistent &>/dev/null; then
@@ -1139,120 +1178,143 @@ EOF
         mkdir -p /etc/iptables 2>/dev/null || true
         iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
     fi
-    echo -e "  ${green}✔ Puertos 22 (SSH), 80 (WS Proxy), 443 (SSL), 3000 (API) y 7300 (UDPGW) abiertos.${plain}"
+    echo -e "  ${green}✔ Puertos 22 (SSH), 80 (WS), 443 (SSL), 3000 (API) y 7300 (BadVPN) abiertos.${plain}"
 
-    echo -e "\n${blue}[4/5] Configurando API_KEY en joif-core y reiniciando servicios...${plain}"
-    mkdir -p /root/joif-core
-    ENV_FILE="/root/joif-core/.env"
-    
-    if [ -f "$ENV_FILE" ]; then
-        if grep -q '^API_KEY=' "$ENV_FILE"; then
-            sed -i 's/^API_KEY=.*/API_KEY=joif2026/' "$ENV_FILE"
-        else
-            echo "API_KEY=joif2026" >> "$ENV_FILE"
-        fi
-        if grep -q '^NODE_API_SECRET=' "$ENV_FILE"; then
-            sed -i 's/^NODE_API_SECRET=.*/NODE_API_SECRET=joif2026/' "$ENV_FILE"
-        else
-            echo "NODE_API_SECRET=joif2026" >> "$ENV_FILE"
-        fi
+    # 4. Configurar API_KEY y verificar servicio
+    echo -e "\n${blue}[4/5] Verificando servicio Edge Node API (Puerto 3000)...${plain}"
+    mkdir -p /root/joif-core 2>/dev/null || true
+    local env_file="/root/joif-core/.env"
+    if [ -f "$env_file" ]; then
+        grep -q '^API_KEY=' "$env_file" || echo "API_KEY=joif2026" >> "$env_file"
+        grep -q '^NODE_API_SECRET=' "$env_file" || echo "NODE_API_SECRET=joif2026" >> "$env_file"
+        grep -q '^PORT=' "$env_file" || echo "PORT=3000" >> "$env_file"
     else
-        cat << 'EOF' > "$ENV_FILE"
+        cat << 'EOF' > "$env_file"
 PORT=3000
 API_KEY=joif2026
 NODE_API_SECRET=joif2026
 EOF
     fi
 
-    systemctl restart joif 2>/dev/null || systemctl restart joif-api 2>/dev/null || true
-    sleep 2
+    local api_key_local=$(grep -m1 '^API_KEY=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r\n ')
+    [ -z "$api_key_local" ] && api_key_local="joif2026"
 
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 http://127.0.0.1:3000/check 2>/dev/null || echo "000")
-    if [ "$HTTP_STATUS" = "200" ]; then
-        echo -e "  ${green}✔ API Edge Node respondiendo perfectamente (HTTP 200).${plain}"
+    systemctl restart joif 2>/dev/null || true
+    sleep 1
+
+    local http_status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 http://127.0.0.1:3000/check 2>/dev/null || echo "000")
+    if [ "$http_status" = "200" ]; then
+        echo -e "  ${green}✔ API Edge Node activa y respondiendo en puerto 3000 (HTTP 200).${plain}"
     else
-        echo -e "  ${yellow}[!] API local retornó código $HTTP_STATUS. Si recién instalaste, verifica 'systemctl status joif'.${plain}"
+        echo -e "  ${yellow}[!] API local retornó HTTP $http_status. Asegurando inicio del servicio joif...${plain}"
+        systemctl start joif 2>/dev/null || true
     fi
 
-    echo -e "\n${blue}[5/5] Vinculación con el Portal Web Central...${plain}"
-    echo -e "${white}¿Deseas registrar este VPS automáticamente en tu Portal Web Central?${plain}"
-    read -p "$(echo -e ${yellow}"Registrar ahora en el Portal Central? [S/n]: "${plain})" reg_auto
-    
-    if [[ ! "$reg_auto" =~ ^[Nn]$ ]]; then
-        echo ""
-        read -p "$(echo -e ${white}"  URL del Portal Central [https://sv-free.joif.net]: "${plain})" PORTAL_URL_INPUT
-        PORTAL_URL="${PORTAL_URL_INPUT:-https://sv-free.joif.net}"
-        PORTAL_URL="${PORTAL_URL%/}"
+    # 5. Registro contra el Portal Web
+    echo -e "\n${blue}[5/5] Vinculación con el Portal Web (Auto-Link)...${plain}"
+    local portal_url="$portal_arg"
+    local portal_key="$token_arg"
+    local vps_name="$name_arg"
 
-        read -p "$(echo -e ${white}"  Key de la Web o Clave Admin [joif_live_... o ENTER para Admin12345!]: "${plain})" PORTAL_PASS_INPUT
-        PORTAL_PASS="${PORTAL_PASS_INPUT:-Admin12345!}"
+    if [ "$is_cli" -eq 0 ]; then
+        read -p "$(echo -e ${white}"  URL del Portal [https://shop.joif.net]: "${plain})" input_url
+        portal_url="${input_url:-https://shop.joif.net}"
 
-        DEFAULT_ID="vps-$(echo "$IP_DETECTADA" | tr '.' '-')"
-        read -p "$(echo -e ${white}"  ID único del VPS [$DEFAULT_ID]: "${plain})" VPS_ID_INPUT
-        VPS_ID="${VPS_ID_INPUT:-$DEFAULT_ID}"
+        read -p "$(echo -e ${white}"  Token de Vinculación (joif_live_...): "${plain})" input_token
+        portal_key="${input_token:-Admin12345!}"
 
-        read -p "$(echo -e ${white}"  Nombre a mostrar [ej: USA - Servidor 01]: "${plain})" VPS_NAME_INPUT
-        VPS_NAME="${VPS_NAME_INPUT:-Servidor JOIF}"
+        local default_id="vps-$(echo "$ip_detectada" | tr '.' '-')"
+        read -p "$(echo -e ${white}"  ID único del VPS [$default_id]: "${plain})" input_id
+        local vps_id="${input_id:-$default_id}"
 
-        read -p "$(echo -e ${white}"  Código de País (2 letras) [US]: "${plain})" VPS_CODE_INPUT
-        VPS_CODE="${VPS_CODE_INPUT:-US}"
+        local default_name="Nodo $auto_country ($ip_detectada)"
+        read -p "$(echo -e ${white}"  Nombre a mostrar [$default_name]: "${plain})" input_name
+        vps_name="${input_name:-$default_name}"
 
-        read -p "$(echo -e ${white}"  Nombre del País [Estados Unidos]: "${plain})" VPS_COUNTRY_INPUT
-        VPS_COUNTRY="${VPS_COUNTRY_INPUT:-Estados Unidos}"
+        read -p "$(echo -e ${white}"  Código de País [$auto_code]: "${plain})" input_code
+        local vps_code="${input_code:-$auto_code}"
 
-        read -p "$(echo -e ${white}"  Bandera emoji [🇺🇸]: "${plain})" VPS_FLAG_INPUT
-        VPS_FLAG="${VPS_FLAG_INPUT:-🇺🇸}"
+        read -p "$(echo -e ${white}"  Nombre del País [$auto_country]: "${plain})" input_country
+        local vps_country="${input_country:-$auto_country}"
 
-        read -p "$(echo -e ${white}"  Límite diario de cuentas [100]: "${plain})" VPS_LIMIT_INPUT
-        VPS_LIMIT="${VPS_LIMIT_INPUT:-100}"
+        read -p "$(echo -e ${white}"  Bandera emoji [$auto_flag]: "${plain})" input_flag
+        local vps_flag="${input_flag:-$auto_flag}"
 
-        echo -e "\n  ${yellow}Enviando registro al Portal Central ($PORTAL_URL)...${plain}"
-
-        REG_RESP=$(curl -s -X POST "${PORTAL_URL}/api/admin/servers" \
-            -H "Content-Type: application/json" \
-            -H "x-admin-password: ${PORTAL_PASS}" \
-            -H "Authorization: Bearer ${PORTAL_PASS}" \
-            -d "{
-              \"id\": \"${VPS_ID}\",
-              \"name\": \"${VPS_NAME}\",
-              \"country_code\": \"${VPS_CODE}\",
-              \"country_name\": \"${VPS_COUNTRY}\",
-              \"flag\": \"${VPS_FLAG}\",
-              \"domain\": \"${DOMINIO_FINAL}\",
-              \"ip\": \"${IP_DETECTADA}\",
-              \"ssh_port\": 22,
-              \"proxy_port\": 80,
-              \"ssl_port\": 443,
-              \"udpgw_port\": 7300,
-              \"api_url\": \"http://${IP_DETECTADA}:3000\",
-              \"api_secret\": \"joif2026\",
-              \"daily_limit\": ${VPS_LIMIT},
-              \"is_active\": 1
-            }" 2>/dev/null || echo '{"error":"Error de conexión"}')
-
-        if echo "$REG_RESP" | grep -q '"success":true'; then
-            echo -e "  ${green}🎉 ¡VPS REGISTRADO EXITOSAMENTE EN EL PORTAL CENTRAL!${plain}"
-        else
-            echo -e "  ${red}❌ No se pudo auto-registrar en el Portal.${plain}"
-            echo -e "  ${yellow}Respuesta recibida: ${white}$REG_RESP${plain}"
-            echo -e "  ${yellow}Puedes agregarlo manualmente desde el Panel de Administración.${plain}"
-        fi
+        read -p "$(echo -e ${white}"  Límite diario de cuentas [100]: "${plain})" input_limit
+        local vps_limit="${input_limit:-100}"
+    else
+        [ -z "$portal_url" ] && portal_url="https://shop.joif.net"
+        local vps_id="vps-$(echo "$ip_detectada" | tr '.' '-')"
+        [ -z "$vps_name" ] && vps_name="Nodo $auto_country ($ip_detectada)"
+        local vps_code="$auto_code"
+        local vps_country="$auto_country"
+        local vps_flag="$auto_flag"
+        local vps_limit=100
     fi
 
-    echo -e "\n${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e "     ${yellow}📋 RESUMEN DE CONFIGURACIÓN DEL SERVIDOR EDGE${plain}"
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e "  • Dominio / Host   : ${green}${DOMINIO_FINAL}${plain}"
-    echo -e "  • IP Pública       : ${green}${IP_DETECTADA}${plain}"
-    echo -e "  • Puerto SSH       : ${white}22${plain}"
-    echo -e "  • Puerto Proxy WS  : ${white}80${plain}"
-    echo -e "  • Puerto UDPGW     : ${white}7300${plain}"
-    echo -e "  • URL de API Edge  : ${yellow}http://${IP_DETECTADA}:3000${plain}"
-    echo -e "  • Clave API Secreta: ${yellow}joif2026${plain}"
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${green}✔ Autoconfiguración completada con éxito.${plain}"
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    pause
+    portal_url="${portal_url%/}"
+
+    if [ -z "$portal_key" ]; then
+        echo -e "  ${red}❌ Error: Debes proporcionar un Token de Vinculación (joif_live_...).${plain}"
+        echo -e "  ${yellow}Uso: menu --autolink \"<URL_TIENDA>\" \"<TOKEN>\" [NOMBRE]${plain}"
+        [ "$is_cli" -eq 0 ] && pause
+        return 1
+    fi
+
+    echo -e "  ${yellow}[*] Enviando registro y solicitando Handshake de Retorno a: ${white}${portal_url}/api/admin/servers${plain}..."
+
+    local reg_resp=$(curl -s --connect-timeout 8 --max-time 15 -X POST "${portal_url}/api/admin/servers" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${portal_key}" \
+        -H "x-api-key: ${portal_key}" \
+        -H "x-admin-password: ${portal_key}" \
+        -d "{
+          \"id\": \"${vps_id}\",
+          \"name\": \"${vps_name}\",
+          \"country_code\": \"${vps_code}\",
+          \"country_name\": \"${vps_country}\",
+          \"flag\": \"${vps_flag}\",
+          \"domain\": \"${dominio_final}\",
+          \"ip\": \"${ip_detectada}\",
+          \"ssh_port\": 22,
+          \"proxy_port\": 80,
+          \"ssl_port\": 443,
+          \"udpgw_port\": 7300,
+          \"api_url\": \"http://${ip_detectada}:3000\",
+          \"api_secret\": \"${api_key_local}\",
+          \"daily_limit\": ${vps_limit:-100},
+          \"is_active\": 1
+        }" 2>/dev/null || echo '{"error":"Error de conexión con el portal"}')
+
+    echo ""
+    if echo "$reg_resp" | grep -qE '"success":\s*true|"ok":\s*true'; then
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "  ${green}🎉 ¡VPS REGISTRADO Y VINCULADO EXITOSAMENTE!${plain}"
+        echo -e "  ${white}Tu nodo ${yellow}${vps_name}${white} (${ip_detectada}) ya está activo en:${plain}"
+        echo -e "  👉 ${green}${portal_url}/admin${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        local ret=0
+    else
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "  ${red}❌ Error al vincular con el portal web:${plain}"
+        echo -e "  ${yellow}${reg_resp}${plain}"
+        echo -e ""
+        echo -e "  ${white}💡 Posibles causas:${plain}"
+        echo -e "  ${white}1. Token inválido o revocado (genera uno nuevo en ${portal_url}/admin).${plain}"
+        echo -e "  ${white}2. Si usas Oracle Cloud / AWS, recuerda abrir el puerto 3000 TCP${plain}"
+        echo -e "     ${white}en las 'Ingress Rules' (Security List) de la consola de tu proveedor.${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        local ret=1
+    fi
+
+    if [ "$is_cli" -eq 0 ]; then
+        pause
+    fi
+    return $ret
+}
+
+autoconfigurar_portal_web() {
+    ejecutar_autolink "$@"
 }
 
 
@@ -1378,6 +1440,12 @@ check_first_run() {
     fi
 }
 
+# Manejo de flags CLI autónomos (Non-interactive)
+if [ "$1" = "--autolink" ] || [ "$1" = "-a" ]; then
+    ejecutar_autolink "$2" "$3" "$4" "cli"
+    exit $?
+fi
+
 # Menú Principal
 check_first_run
 while true; do
@@ -1391,8 +1459,9 @@ while true; do
     echo -e " ${green}[03]${plain} ➮ 👁️  MONITOR DE USUARIOS EN LÍNEA  [ ${green}${online_count}${plain} ]"
     echo -e " ${green}[04]${plain} ➮ ⚡ AUTOINICIAR SCRIPT AL ENTRAR   ${autostart_badge}"
     echo -e " ${green}[05]${plain} ➮ 📡 INSTALADOR DE PROTOCOLOS (WS, BadVPN, SSL)"
+    echo -e " ${green}[06]${plain} ➮ ⚡ VINCULAR CON TIENDA WEB (Auto-Link)"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${green}[06]${plain} ➮ 🔄 GESTIÓN / ACTUALIZAR SCRIPT  |  ${red}[0]${plain} ⇦ [ SALIR ]"
+    echo -e " ${green}[07]${plain} ➮ 🔄 GESTIÓN / ACTUALIZAR SCRIPT  |  ${red}[0]${plain} ⇦ [ SALIR ]"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     read -p "$(echo -e ${white}" ► Opcion : "${plain})" opt_main
 
@@ -1402,7 +1471,8 @@ while true; do
         3|03) menu_mostrar_conectados ;;
         4|04) bash /root/joif-core/modules/system/autostart_manager.sh ;;
         5|05) bash /root/joif-core/modules/network/protocol_manager.sh ;;
-        6|06)
+        6|06) ejecutar_autolink ;;
+        7|07)
             clear
             echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
             echo -e "           ${yellow}GESTIÓN DEL SCRIPT JOIF${plain}"
