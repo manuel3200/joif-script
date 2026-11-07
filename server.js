@@ -135,12 +135,28 @@ app.delete('/api/users/:username', authMiddleware, async (req, res) => {
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
     const nativeName = security.linuxName(result.rows[0].hwid || result.rows[0].username);
     if (process.platform === 'linux') {
+      try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName]); } catch (e) { if (e.exitCode !== 1) console.error(e); }
       let exists = true; try { await security.run('getent', ['passwd', nativeName]); } catch (e) { if (e.exitCode === 2) exists = false; else throw e; }
       if (exists) await security.run('sudo', ['-n', 'userdel', '-f', '--', nativeName]);
     }
     await db.query('DELETE FROM users WHERE username = ?', [req.params.username]);
-    res.json({ message: 'Usuario eliminado.' });
+    res.json({ message: 'Usuario eliminado con éxito.' });
   } catch (e) { res.status(500).json({ error: 'No se pudo eliminar la cuenta; se conserva el registro para reintentar.' }); }
+});
+
+app.delete('/api/users', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query('SELECT username, hwid FROM users');
+    if (process.platform === 'linux') {
+      for (const row of result.rows) {
+        const nativeName = security.linuxName(row.hwid || row.username);
+        try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName]); } catch (_) {}
+        try { await security.run('sudo', ['-n', 'userdel', '-f', '--', nativeName]); } catch (_) {}
+      }
+    }
+    await db.query('DELETE FROM users');
+    res.json({ message: 'Todos los usuarios han sido eliminados por completo.' });
+  } catch (e) { res.status(500).json({ error: 'No se pudo eliminar a todos los usuarios.' }); }
 });
 
 app.post('/api/users/:username/revoke', authMiddleware, async (req, res) => {

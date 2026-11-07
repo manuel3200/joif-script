@@ -26,5 +26,9 @@ test('real SQLite backend creates, checks and revokes a test account without acc
   assert.equal((await fetch(base+'/check/stage2test')).status,403);
   assert.ok(!(await (await fetch(base+'/check')).json()).includes('stage2test'));
   assert.equal((await post('/api/auth/change-password',{newPassword:'short'},token)).status,400);
+  const delAll = await fetch(base + '/api/users', { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  assert.equal(delAll.status, 200);
+  const usersAfter = await (await fetch(base + '/api/users', { headers: { Authorization: 'Bearer ' + token } })).json();
+  assert.equal(usersAfter.length, 0);
 });
 

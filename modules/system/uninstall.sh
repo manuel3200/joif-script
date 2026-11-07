@@ -37,6 +37,28 @@ if [[ ! "$backup_db" =~ ^[Nn]$ ]]; then
     fi
 fi
 
+echo -e ""
+read -p "$(echo -e ${yellow}"¿Deseas BORRAR TODO (eliminar usuarios VPN de Linux y archivos residuales)? [S/n]: "${plain})" purge_all
+if [[ ! "$purge_all" =~ ^[Nn]$ ]]; then
+    echo -e "\n${yellow}Eliminando cuentas de clientes VPN creadas en Linux...${plain}"
+    if [ -f /root/joif-core/database.sqlite ]; then
+        sqlite3 -separator '|' /root/joif-core/database.sqlite "SELECT username, hwid FROM users;" 2>/dev/null | while IFS='|' read -r uname uhwid; do
+            target="${uhwid:-$uname}"
+            pkill -u "$target" 2>/dev/null || true
+            userdel -f "$target" 2>/dev/null || true
+            if [ -n "$uhwid" ]; then
+                userdel -f "hwid_${uhwid:0:8}" 2>/dev/null || true
+            fi
+        done
+    fi
+    awk -F: '/^hwid_/ {print $1}' /etc/passwd 2>/dev/null | while read -r huser; do
+        pkill -u "$huser" 2>/dev/null || true
+        userdel -f "$huser" 2>/dev/null || true
+    done
+    rm -rf /root/joif-backups /root/.JOIF_* /root/joif-users-backup*.sqlite /root/setup /root/joif-repo*.zip
+    echo -e "  ${green}✔ Usuarios VPN y archivos residuales purgados por completo.${plain}"
+fi
+
 echo -e "\n${blue}[1/4] Deteniendo y deshabilitando servicios...${plain}"
 for svc in joif joif-proxy joif-limitador joif-api badvpn-dual badvpn; do
     systemctl stop "$svc" 2>/dev/null
