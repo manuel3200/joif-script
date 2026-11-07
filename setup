@@ -156,7 +156,7 @@ if [ ! -d "node_modules/express" ]; then
     npm install --omit=dev --no-audit --no-fund > /dev/null 2>&1
 fi
 chmod +x /root/joif-core/menu.sh /root/joif-core/update.sh 2>/dev/null
-chmod +x /root/joif-core/core/*.sh /root/joif-core/modules/**/*.sh 2>/dev/null
+chmod -R +x /root/joif-core/core /root/joif-core/modules 2>/dev/null
 ln -sf /root/joif-core/menu.sh /usr/bin/menu
 ln -sf /root/joif-core/update.sh /usr/bin/joif-update
 
