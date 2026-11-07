@@ -9,7 +9,7 @@ if [ -f "$SCRIPT_DIR/core/utils.sh" ]; then
     source "$SCRIPT_DIR/core/utils.sh"
 elif [ -f "/root/joif-core/core/utils.sh" ]; then
     source /root/joif-core/core/utils.sh
-fi
+else
     # Fallback temporal si no encuentra la ruta
     red='\033[1;31m'
     green='\033[1;32m'
