@@ -10,7 +10,7 @@ const security = require('./backend-security');
 const SESSION_SECRET = security.sessionSecret(__dirname);
 
 const app = express();
-// The web panel and API share their origin.
+app.use(cors());
 app.use(express.json({ limit: '100kb' }));
 
 // Servir el panel web ligero estático
