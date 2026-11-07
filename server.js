@@ -118,15 +118,19 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     if (exists.rowCount) return res.status(409).json({ error: 'La cuenta ya existe.' });
     if (process.platform === 'linux') {
       try {
-        await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--', account.nativeName]);
+        await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--badname', '--', account.nativeName]);
         created = true;
       } catch (err) {
+        try {
+          await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--', account.nativeName]);
+          created = true;
+        } catch (_) {}
         let existsOnLinux = false;
         try {
           await security.run('getent', ['passwd', account.nativeName]);
           existsOnLinux = true;
         } catch (_) {}
-        if (!existsOnLinux) throw err;
+        if (!existsOnLinux && !created) throw err;
       }
       await security.run('sudo', ['-n', 'chpasswd'], account.nativeName + ':' + account.password + '\n');
       await security.run('sudo', ['-n', 'chage', '-E', account.date, '--', account.nativeName]);

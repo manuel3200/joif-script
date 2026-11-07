@@ -86,7 +86,7 @@ fi
 
 # Animación de paquetes
 apt-get update -y > /dev/null 2>&1
-paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq")
+paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq" "psmisc")
 for pkg in "${paquetes[@]}"; do
     apt-get install -y -qq "$pkg" > /dev/null 2>&1
     if [ $? -eq 0 ]; then
@@ -96,6 +96,15 @@ for pkg in "${paquetes[@]}"; do
     fi
     sleep 0.2
 done
+
+# Limpiar servicios residuales conflictivos de instalaciones previas (Chumo / ADM)
+systemctl stop nginx apache2 caddy lighttpd python-proxy epro eproxy wsproxy 2>/dev/null || true
+systemctl disable nginx apache2 caddy lighttpd python-proxy epro eproxy wsproxy 2>/dev/null || true
+killall -9 nginx apache2 httpd lighttpd 2>/dev/null || true
+pkill -9 -f "PDirect|P3Direct|PPub|PPriv|wsproxy|epro" 2>/dev/null || true
+crontab -l 2>/dev/null | grep -E -v 'autoboot|PDirect|wsproxy|epro|chumovps' | crontab - 2>/dev/null || true
+sed -i '/autoboot/d' /etc/crontab 2>/dev/null || true
+rm -f /bin/autoboot /etc/autoboot 2>/dev/null || true
 
 # Node.js y NPM (Rápido y sin bloqueos de debconf/needrestart)
 if ! command -v node &> /dev/null; then
