@@ -58,6 +58,103 @@ get_online_users() {
     echo "$count"
 }
 
+draw_active_ports() {
+    local -a items=()
+    local raw=""
+    if command -v ss &>/dev/null; then
+        raw=$(ss -tulpn 2>/dev/null | grep -E 'LISTEN|UNCONN')
+    elif command -v lsof &>/dev/null; then
+        raw=$(lsof -V -i -P -n 2>/dev/null | grep -E 'LISTEN|UDP')
+    fi
+
+    # 1. SSH
+    if echo "$raw" | grep -E '(:22[[:space:]]|:22$|sshd|/ssh)' &>/dev/null; then
+        local p=$(echo "$raw" | grep -E 'sshd|/ssh' | grep -oE ':[0-9]+' | tr -d ':' | sort -nu | head -n1)
+        [[ -z "$p" ]] && p=22
+        items+=("SSH: ${p}")
+    fi
+
+    # 2. Dropbear
+    if echo "$raw" | grep -i 'dropbear' &>/dev/null; then
+        local p=$(echo "$raw" | grep -i 'dropbear' | grep -oE ':[0-9]+' | tr -d ':' | sort -nu | head -n1)
+        items+=("Dropbear: ${p}")
+    fi
+
+    # 3. WS-Proxy / Python SOCKS (Port 80)
+    if echo "$raw" | grep -E '(:80[[:space:]]|:80$)' &>/dev/null; then
+        if echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -E 'node|proxy' &>/dev/null; then
+            items+=("WS-Epro: 80")
+        elif echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -E 'python' &>/dev/null; then
+            items+=("SOCKS/PYTHON: 80")
+        else
+            items+=("Proxy(WS): 80")
+        fi
+    fi
+
+    # 4. CheckUser API (Port 3000)
+    if echo "$raw" | grep -E '(:3000[[:space:]]|:3000$)' &>/dev/null; then
+        items+=("CheckUser API: 3000")
+    fi
+
+    # 5. SSL / TLS / Stunnel (Port 443)
+    if echo "$raw" | grep -E '(:443[[:space:]]|:443$)' &>/dev/null; then
+        items+=("SSL/TLS: 443")
+    fi
+
+    # 6. WEB Nginx / Apache (Port 81)
+    if echo "$raw" | grep -E '(:81[[:space:]]|:81$)' &>/dev/null; then
+        items+=("WEB-NGinx: 81")
+    fi
+
+    # 7. BadVPN UDPGW (7200 / 7300)
+    if echo "$raw" | grep -E '(:7200[[:space:]]|:7200$)' &>/dev/null; then
+        items+=("BadVPN: 7200")
+    fi
+    if echo "$raw" | grep -E '(:7300[[:space:]]|:7300$)' &>/dev/null; then
+        items+=("BadVPN: 7300")
+    fi
+
+    # 8. System-DNS (Port 53)
+    if echo "$raw" | grep -E '(:53[[:space:]]|:53$)' &>/dev/null; then
+        items+=("System-DNS: 53")
+    fi
+
+    # 9. SlowDNS (Port 5300)
+    if echo "$raw" | grep -E '(:5300[[:space:]]|:5300$)' &>/dev/null; then
+        items+=("SlowDNS: 5300")
+    fi
+
+    # 10. OpenVPN (Port 1194 u otros)
+    if echo "$raw" | grep -i 'openvpn' &>/dev/null; then
+        local p=$(echo "$raw" | grep -i 'openvpn' | grep -oE ':[0-9]+' | tr -d ':' | sort -nu | head -n1)
+        [[ -z "$p" ]] && p=1194
+        items+=("OpenVPN: ${p}")
+    fi
+
+    # 11. XRay / V2Ray
+    if echo "$raw" | grep -E 'xray|v2ray' &>/dev/null; then
+        local p=$(echo "$raw" | grep -E 'xray|v2ray' | grep -oE ':[0-9]+' | tr -d ':' | sort -nu | head -n1)
+        items+=("XRay/V2Ray: ${p}")
+    fi
+
+    local total=${#items[@]}
+    if [ "$total" -eq 0 ]; then
+        echo -e " ${yellow}∘ Ningún puerto activo detectado${plain}"
+        return
+    fi
+
+    for ((i=0; i<total; i+=2)); do
+        local col1="${items[i]}"
+        local col2=""
+        if [ $((i+1)) -lt "$total" ]; then
+            col2="${items[i+1]}"
+            printf " ∘ %-23s ∘ %-23s\n" "$col1" "$col2"
+        else
+            printf " ∘ %-23s\n" "$col1"
+        fi
+    done
+}
+
 draw_header() {
     clear
     get_sys_info
@@ -68,10 +165,7 @@ draw_header() {
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " Key: Verified【 ${yellow}TheJOIF ©${plain} 】(V1.5.0) "
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ∘ SSH: 22             ∘ System-DNS: 53"
-    echo -e " ∘ SOCKS/PYTHON3: 80   ∘ WEB-NGinx: 81"
-    echo -e " ∘ BadVPN: 7200        ∘ BadVPN: 7300"
-    echo -e " ∘ CheckUser API: 3000"
+    draw_active_ports
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ∘ TOTAL: ${white}${RAM_TOTAL}M${plain} ∘  M|LIBRE: ${white}${RAM_FREE}M${plain}  ∘  EN USO: ${white}${RAM_USED}M${plain}"
     echo -e " ∘ U/RAM: ${white}${RAM_PERCENT}%${plain}  ∘ U/CPU: ${white}${CPU_USAGE}%${plain}  ∘ CLIENTES ONLINE: ${green}${ONLINE_USERS}${plain}"

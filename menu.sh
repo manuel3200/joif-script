@@ -3,10 +3,13 @@
 # JOIF CLOUD - CLI Menu (Estilo JOIF Avanzado)
 # =========================================================
 
-# Colores avanzados (Ahora importados desde utils)
-if [ -f "/root/joif-core/core/utils.sh" ]; then
+# Importación de utilidades
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/core/utils.sh" ]; then
+    source "$SCRIPT_DIR/core/utils.sh"
+elif [ -f "/root/joif-core/core/utils.sh" ]; then
     source /root/joif-core/core/utils.sh
-else
+fi
     # Fallback temporal si no encuentra la ruta
     red='\033[1;31m'
     green='\033[1;32m'
@@ -110,11 +113,7 @@ menu_crear_usuario() {
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e " ${yellow}* Puertas Activas en su Servidor *${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-        echo -e " ∘ SSH: 22             ∘ System-DNS: 53"
-        echo -e " ∘ WS-Epro: 80         ∘ WEB-NGInx: 81"
-        echo -e " ∘ RPCBind: 111        ∘ danted: 1080"
-        echo -e " ∘ BadVPN: 7200        ∘ BadVPN: 7300"
-        echo -e " ∘ CheckUser API: 3000"
+        draw_active_ports
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e " DOMAIN          : ${white}$DOMAIN${plain}"
         echo -e " Host/IP-Address : ${white}$IP${plain}"
@@ -181,10 +180,7 @@ menu_crear_usuario() {
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ${yellow}* Puertas Activas en su Servidor *${plain}"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ∘ SSH: 22             ∘ System-DNS: 53"
-    echo -e " ∘ SOCKS/PYTHON3: 80   ∘ WEB-NGinx: 81"
-    echo -e " ∘ BadVPN: 7200        ∘ BadVPN: 7300"
-    echo -e " ∘ CheckUser API: 3000"
+    draw_active_ports
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " DOMAIN  : ${white}$DOMAIN${plain}"
     echo -e " Host/IP-Address : ${white}$IP${plain}"
