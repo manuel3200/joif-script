@@ -282,8 +282,7 @@ function startUdpgw() {
   });
 }
 
-// Iniciar supervisor al arrancar el agente
-startUdpgw();
+// BadVPN UDPGW es gestionado de forma modular e independiente por systemd (badvpn-dual.service)
 require('./account-reconciler').startReconciler(db);
 
 const PORT = process.env.PORT || 3000;

@@ -183,6 +183,10 @@ function parseCliArgs() {
 if (require.main === module) {
   const { proxyPort, sshPort } = parseCliArgs();
   const server = createProxyServer({ proxyPort, sshPort });
+  server.on('error', (err) => {
+    console.error(`❌ [PROXY-NODE] Error en el servidor proxy (Puerto ${proxyPort}):`, err.message);
+    process.exit(1);
+  });
   server.listen(proxyPort, '0.0.0.0', () => {
     console.log(`🚀 [PROXY-NODE] WebSocket Proxy activo en 0.0.0.0:${proxyPort}`);
     console.log(`➡️ [PROXY-NODE] Reenvío optimizado a 127.0.0.1:${sshPort} (Zero-Latency / KeepAlive activo)`);

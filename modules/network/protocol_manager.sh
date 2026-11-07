@@ -31,11 +31,20 @@ while true; do
                 export NEEDRESTART_MODE=a
                 apt-get update -qq && apt-get install -y -qq nodejs npm > /dev/null 2>&1
             fi
+            NODE_BIN=$(command -v node || echo "/usr/bin/node")
 
+            echo -e " ${yellow}[*] Liberando puerto 80 (deteniendo servicios que compitan)...${plain}"
+            systemctl stop apache2 2>/dev/null || true
+            systemctl disable apache2 2>/dev/null || true
+            systemctl stop nginx 2>/dev/null || true
             systemctl stop python-proxy 2>/dev/null || true
             systemctl disable python-proxy 2>/dev/null || true
+            if command -v fuser &>/dev/null; then
+                fuser -k 80/tcp 2>/dev/null || true
+            fi
+            sleep 1
 
-            cat << 'EOF' > /etc/systemd/system/joif-proxy.service
+            cat << EOF > /etc/systemd/system/joif-proxy.service
 [Unit]
 Description=JOIF High-Performance WebSocket SSH Proxy (Port 80)
 After=network.target
@@ -44,7 +53,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/joif-core
-ExecStart=/usr/bin/node /root/joif-core/proxy.js --port 80 --target 22
+ExecStart=$NODE_BIN /root/joif-core/proxy.js --port 80 --target 22
 Restart=always
 RestartSec=2
 LimitNOFILE=65535
@@ -65,7 +74,8 @@ EOF
             if systemctl is-active --quiet joif-proxy; then
                 echo -e "${green}✅ Proxy WebSocket Activo en puerto 80 -> Destino local 22.${plain}"
             else
-                echo -e "${red}❌ No se pudo iniciar joif-proxy. Revisa journalctl -u joif-proxy -n 20${plain}"
+                echo -e "${red}❌ No se pudo iniciar joif-proxy. Detalle de logs del sistema:${plain}"
+                journalctl -u joif-proxy -n 8 --no-pager 2>/dev/null
             fi
             pause
             ;;

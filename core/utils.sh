@@ -80,12 +80,16 @@ draw_active_ports() {
         items+=("Dropbear: ${p}")
     fi
 
-    # 3. WS-Proxy / Python SOCKS (Port 80)
+    # 3. WS-Proxy / Python SOCKS / Web (Port 80)
     if echo "$raw" | grep -E '(:80[[:space:]]|:80$)' &>/dev/null; then
         if echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -E 'node|proxy' &>/dev/null; then
             items+=("WS-Epro: 80")
         elif echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -E 'python' &>/dev/null; then
             items+=("SOCKS/PYTHON: 80")
+        elif echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -i 'nginx' &>/dev/null; then
+            items+=("WEB-NGinx: 80")
+        elif echo "$raw" | grep -E '(:80[[:space:]]|:80$)' | grep -i 'apache' &>/dev/null; then
+            items+=("APACHE: 80")
         else
             items+=("Proxy(WS): 80")
         fi
