@@ -91,8 +91,17 @@ menu_crear_usuario() {
         exp_display=$(date -d "+$days days" +"%d/%m/%Y")
 
         echo -e "${blue}Registrando cuenta HWID en el sistema...${plain}"
-        curl -s -X POST $API_URL -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" \
-            -d "{\"hwid\": \"$hwid\", \"alias\": \"$client_name\", \"expiration_date\": \"$exp_date\", \"max_connections\": 1}" > /dev/null
+        res=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" \
+            -d "{\"hwid\": \"$hwid\", \"alias\": \"$client_name\", \"expiration_date\": \"$exp_date\", \"max_connections\": 1}")
+        http_code=$(echo "$res" | tail -n1)
+        body=$(echo "$res" | sed '$d')
+
+        if [ "$http_code" != "201" ]; then
+            echo -e "${red}❌ Error al registrar en el servidor (HTTP $http_code): $body${plain}"
+            echo -e "${yellow}Presione Enter para continuar...${plain}"
+            read -r
+            return
+        fi
 
         DOMAIN=$(cat /root/.JOIF_domain 2>/dev/null || echo "$IP")
         clear
@@ -153,7 +162,17 @@ menu_crear_usuario() {
     exp_display=$(date -d "+$days days" +"%d/%m/%Y")
     
     echo -e "${blue}Enviando datos al Panel Web...${plain}"
-    curl -s -X POST $API_URL -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" -d "{\"username\": \"$user\", \"password\": \"$pass\", \"expiration_date\": \"$exp_date\", \"max_connections\": $max_conn, \"hwid\": \"$hwid\"}" > /dev/null
+    res=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" \
+        -d "{\"username\": \"$user\", \"password\": \"$pass\", \"expiration_date\": \"$exp_date\", \"max_connections\": $max_conn, \"hwid\": \"$hwid\"}")
+    http_code=$(echo "$res" | tail -n1)
+    body=$(echo "$res" | sed '$d')
+
+    if [ "$http_code" != "201" ]; then
+        echo -e "${red}❌ Error al registrar en el servidor (HTTP $http_code): $body${plain}"
+        echo -e "${yellow}Presione Enter para continuar...${plain}"
+        read -r
+        return
+    fi
     
     DOMAIN=$(cat /root/.JOIF_domain 2>/dev/null || echo "$IP")
     clear

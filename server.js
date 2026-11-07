@@ -117,7 +117,17 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     const exists = await db.query('SELECT id FROM users WHERE username = ? OR (hwid IS NOT NULL AND hwid = ?)', [account.username, account.hwid || account.username]);
     if (exists.rowCount) return res.status(409).json({ error: 'La cuenta ya existe.' });
     if (process.platform === 'linux') {
-      await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--badname', '--', account.nativeName]); created = true;
+      try {
+        await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--', account.nativeName]);
+        created = true;
+      } catch (err) {
+        let existsOnLinux = false;
+        try {
+          await security.run('getent', ['passwd', account.nativeName]);
+          existsOnLinux = true;
+        } catch (_) {}
+        if (!existsOnLinux) throw err;
+      }
       await security.run('sudo', ['-n', 'chpasswd'], account.nativeName + ':' + account.password + '\n');
       await security.run('sudo', ['-n', 'chage', '-E', account.date, '--', account.nativeName]);
     }
@@ -125,7 +135,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     res.status(201).json({ message: 'Usuario creado con éxito', id: result.lastID, username: account.username, alias: account.alias });
   } catch (e) {
     if (created) { try { await security.run('sudo', ['-n', 'userdel', '-f', '--', account.nativeName]); } catch (_) { console.error('Requiere reconciliar cuenta Linux después de un alta fallida.'); } }
-    res.status(500).json({ error: 'No se pudo crear la cuenta. Revisa los registros del servidor.' });
+    res.status(500).json({ error: 'No se pudo crear la cuenta: ' + (e.message || 'Revisa los registros del servidor.') });
   }
 });
 
