@@ -4,6 +4,9 @@ function fixture(t) { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mivpn-s
 test('account validation prevents command injection and invalid dates', () => {
   const good = { username: 'testuser', password: 'Pass!123456789', expiration_date: '2099-12-01', max_connections: 2 };
   assert.equal(security.validateAccount(good).date, '2099-12-01');
+  const hwidAcc = security.validateAccount({ ...good, hwid: 'h9c69d562f2c697f7c15953eb6706e35' });
+  assert.equal(hwidAcc.hwid, 'h9c69d562f2c697f7c15953eb6706e35');
+  assert.equal(hwidAcc.nativeName, 'testuser');
   for (const username of ['root', '-f', 'x;touch file', 'x\nroot']) assert.throws(() => security.validateAccount({ ...good, username }));
   assert.throws(() => security.validateAccount({ ...good, password: 'pass\nroot:evil' }));
   assert.throws(() => security.validateAccount({ ...good, expiration_date: '2099-02-30' }));

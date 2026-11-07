@@ -89,9 +89,9 @@ function createProxyServer(options = {}) {
         const colon = line.indexOf(':');
         if (colon === -1) continue;
         const key = line.slice(0, colon).trim().toLowerCase();
-        const value = line.slice(colon + 1).trim();
+        const value = line.slice(colon + 1).trim().replace(/^["']|["']$/g, '');
 
-        if (key === 'x-hwid') {
+        if (key === 'x-hwid' || key === 'hwid' || key === 'x-device-id') {
           hwid = value;
         } else if (key === 'x-real-host') {
           realHost = value;
@@ -102,7 +102,7 @@ function createProxyServer(options = {}) {
       if (hwid && database) {
         try {
           const result = await database.query(
-            'SELECT username, status, expiration_date FROM users WHERE hwid = ? OR username = ?',
+            'SELECT username, status, expiration_date FROM users WHERE hwid = ? COLLATE NOCASE OR username = ? COLLATE NOCASE',
             [hwid, hwid]
           );
 

@@ -46,6 +46,85 @@ menu_crear_usuario() {
         return
     fi
 
+    # CREADOR DE CUENTAS HWID ESTILO CHUMOGH / HTTP CUSTOM (EPRO)
+    if [ "$opt_crear" = "3" ] || [ "$opt_crear" = "03" ]; then
+        clear
+        echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        read -p "$(echo -e ${white}" Ingrese Nombre del Cliente: "${plain})" user
+        user=$(echo "$user" | tr -d '[:space:]')
+        if [ -z "$user" ]; then
+            echo -e "${red}Error: Debes ingresar el nombre del cliente.${plain}"
+            sleep 2
+            return
+        fi
+
+        clear
+        echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e ""
+        echo -e " ${yellow}INGRESA HWID PARA ${white}$user${plain}"
+        read -p "$(echo -e ${yellow}" HWID: "${green})" hwid
+        echo -e "${plain}"
+        hwid=$(echo "$hwid" | tr -d '[:space:]')
+        if [ -z "$hwid" ]; then
+            echo -e "${red}Error: Debes ingresar el HWID del dispositivo.${plain}"
+            sleep 2
+            return
+        fi
+
+        clear
+        echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e ""
+        echo -e " ${yellow}TIEMPO DE DURACION EN DIAS PARA ${white}$user${plain}"
+        read -p "$(echo -e ${yellow}" VALIDEZ : "${green})" days
+        echo -e "${plain}"
+        [[ -z "$days" ]] && days=30
+
+        # Para HWID no pide contraseña (se sincroniza con el usuario) ni límite manual (1 dispositivo)
+        pass="$user"
+        max_conn=1
+        exp_date=$(date -d "+$days days" --iso-8601=seconds)
+        exp_display=$(date -d "+$days days" +"%d/%m/%Y")
+
+        echo -e "${blue}Registrando cuenta HWID en el sistema...${plain}"
+        curl -s -X POST $API_URL -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" \
+            -d "{\"username\": \"$user\", \"password\": \"$pass\", \"expiration_date\": \"$exp_date\", \"max_connections\": 1, \"hwid\": \"$hwid\"}" > /dev/null
+
+        DOMAIN=$(cat /root/.JOIF_domain 2>/dev/null || echo "$IP")
+        clear
+        echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ${yellow}* Puertas Activas en su Servidor *${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ∘ SSH: 22             ∘ System-DNS: 53"
+        echo -e " ∘ WS-Epro: 80         ∘ WEB-NGInx: 81"
+        echo -e " ∘ RPCBind: 111        ∘ danted: 1080"
+        echo -e " ∘ BadVPN: 7200        ∘ BadVPN: 7300"
+        echo -e " ∘ CheckUser API: 3000"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " DOMAIN          : ${white}$DOMAIN${plain}"
+        echo -e " Host/IP-Address : ${white}$IP${plain}"
+        echo -e " USUARIO         : ${white}$user${plain}"
+        echo -e " HWID            : ${green}$hwid${plain}"
+        echo -e " VALIDEZ         : ${white}$exp_display${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "   ${white}En APPS como HTTP Inyector, CUSTOM, etc${plain}"
+        echo -e "   ${red}No existe Dropbear${plain}"
+        echo -e "   ${red}No existe SSL${plain}"
+        echo -e " 🙍 ${yellow}Proxy(WS) : ${white}$DOMAIN:80${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ${green}¡Enter, para volver!${plain}"
+        read -r
+        return
+    fi
+
     clear
     echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -66,20 +145,10 @@ menu_crear_usuario() {
 
     echo -e "\n${yellow}[+] Datos del Usuario${plain}"
     read -p "Nombre de Usuario: " user
-    
-    if [ "$opt_crear" = "3" ] || [ "$opt_crear" = "03" ]; then
-        read -p "Días de duración (ej. 30) [30]: " days
-        [[ -z "$days" ]] && days=30
-        read -p "HWID del Dispositivo (ej. JOIF-12345): " hwid
-        hwid=$(echo "$hwid" | tr -d '[:space:]')
-        # Generar un hash MD5 a partir del HWID y una clave secreta (8 caracteres)
-        pass=$(echo -n "${hwid}JOIF_CLOUD_SECURE_KEY_99" | md5sum | cut -c 1-8)
-    else
-        read -p "Contraseña: " pass
-        read -p "Días de duración (ej. 30) [30]: " days
-        [[ -z "$days" ]] && days=30
-        hwid=""
-    fi
+    read -p "Contraseña: " pass
+    read -p "Días de duración (ej. 30) [30]: " days
+    [[ -z "$days" ]] && days=30
+    hwid=""
 
     exp_date=$(date -d "+$days days" --iso-8601=seconds)
     exp_display=$(date -d "+$days days" +"%d/%m/%Y")

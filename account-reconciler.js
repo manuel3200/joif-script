@@ -5,7 +5,7 @@ async function reconcileAccounts(db, system = security.run, now = Date.now()) {
   const summary = { expired: 0, missing: 0, errors: 0 };
   for (const account of rows) {
     try {
-      const name = security.linuxName(account.hwid || account.username);
+      const name = security.linuxName(account.username);
       let passwd;
       try { passwd = await system('getent', ['passwd', name]); } catch (e) { if (e.exitCode === 2) { summary.missing++; continue; } throw e; }
       const fields = passwd.trim().split(':');

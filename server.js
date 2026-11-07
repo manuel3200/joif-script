@@ -92,7 +92,7 @@ app.post('/api/users/:username/config', authMiddleware, async (req, res) => {
     const user = result.rows[0];
     if (!user) return res.status(404).json({ error: 'Cuenta inexistente.' });
     if (user.status !== 'active' || !Number.isFinite(Date.parse(user.expiration_date)) || Date.parse(user.expiration_date) <= Date.now()) return res.status(403).json({ error: 'Cuenta vencida o revocada.' });
-    const nativeName = security.linuxName(user.hwid || user.username);
+    const nativeName = security.linuxName(user.username);
     const config = { schema_version: 1, protocol: 'ssh', server_string: host + ':22@' + nativeName + ':' + user.password, udpgw_ports: '7300', payload: '', sni_host: '', use_payload: false, use_ssl: false, is_locked: true, author_note: 'Cuenta SSH', hwid: user.hwid || '', use_hwid_auth: false, auth_user: nativeName, auth_pass: user.password };
     res.set('Cache-Control', 'no-store').json({ data: require('./joif').encrypt(config) });
   } catch (_) { res.status(500).json({ error: 'No se pudo generar la configuración.' }); }
@@ -114,7 +114,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
   try { account = security.validateAccount(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
   let created = false;
   try {
-    const exists = await db.query('SELECT id FROM users WHERE username = ? OR (hwid IS NOT NULL AND hwid = ?)', [account.username, account.nativeName]);
+    const exists = await db.query('SELECT id FROM users WHERE username = ? OR (hwid IS NOT NULL AND hwid = ?)', [account.username, account.hwid || account.username]);
     if (exists.rowCount) return res.status(409).json({ error: 'La cuenta ya existe.' });
     if (process.platform === 'linux') {
       await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--', account.nativeName]); created = true;
@@ -133,7 +133,7 @@ app.delete('/api/users/:username', authMiddleware, async (req, res) => {
   try {
     const result = await db.query('SELECT username, hwid FROM users WHERE username = ?', [req.params.username]);
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    const nativeName = security.linuxName(result.rows[0].hwid || result.rows[0].username);
+    const nativeName = security.linuxName(result.rows[0].username);
     if (process.platform === 'linux') {
       try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName]); } catch (e) { if (e.exitCode !== 1) console.error(e); }
       let exists = true; try { await security.run('getent', ['passwd', nativeName]); } catch (e) { if (e.exitCode === 2) exists = false; else throw e; }
@@ -149,7 +149,7 @@ app.delete('/api/users', authMiddleware, async (req, res) => {
     const result = await db.query('SELECT username, hwid FROM users');
     if (process.platform === 'linux') {
       for (const row of result.rows) {
-        const nativeName = security.linuxName(row.hwid || row.username);
+        const nativeName = security.linuxName(row.username);
         try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName]); } catch (_) {}
         try { await security.run('sudo', ['-n', 'userdel', '-f', '--', nativeName]); } catch (_) {}
       }
@@ -163,7 +163,7 @@ app.post('/api/users/:username/revoke', authMiddleware, async (req, res) => {
   try {
     const result = await db.query('SELECT username, hwid FROM users WHERE username = ?', [req.params.username]);
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    const nativeName = security.linuxName(result.rows[0].hwid || result.rows[0].username);
+    const nativeName = security.linuxName(result.rows[0].username);
     if (process.platform === 'linux') {
       await security.run('sudo', ['-n', 'usermod', '-L', '--', nativeName]);
       await security.run('sudo', ['-n', 'chage', '-E', '0', '--', nativeName]);
@@ -196,7 +196,7 @@ app.get(['/api/check/:id', '/check/:id'], async (req, res) => {
 
     const user = userRes.rows[0];
     if (user.status !== 'active' || !Number.isFinite(Date.parse(user.expiration_date)) || Date.parse(user.expiration_date) <= Date.now()) return res.status(403).json({ error: 'Cuenta vencida o revocada.' });
-    const linuxUser = user.hwid ? user.hwid : user.username;
+    const linuxUser = user.username;
     
     // Calcular días restantes
     const expDate = new Date(user.expiration_date);
