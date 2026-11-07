@@ -1137,19 +1137,23 @@ ejecutar_autolink() {
 
     # 2. Optimización OpenSSH
     echo -e "\n${blue}[2/5] Optimizando OpenSSH y shells del sistema (Ubuntu / Oracle / AWS)...${plain}"
-    grep -qxF '/bin/false' /etc/shells 2>/dev/null || echo '/bin/false' >> /etc/shells
+    if [ -f /etc/shells ]; then
+        grep -qxF '/bin/false' /etc/shells 2>/dev/null || echo '/bin/false' >> /etc/shells 2>/dev/null || true
+    fi
 
-    mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
-    cat << 'EOF' > /etc/ssh/sshd_config.d/01-password-auth.conf
+    if [ -d /etc/ssh ]; then
+        mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
+        cat << 'EOF' > /etc/ssh/sshd_config.d/01-password-auth.conf 2>/dev/null || true
 PasswordAuthentication yes
 KbdInteractiveAuthentication yes
 PermitEmptyPasswords no
 EOF
-    sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config 2>/dev/null || true
-    sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config 2>/dev/null || true
-    echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config 2>/dev/null || true
-    sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config 2>/dev/null || true
-    echo "ClientAliveCountMax 2" >> /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config 2>/dev/null || true
+        echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config 2>/dev/null || true
+        echo "ClientAliveCountMax 2" >> /etc/ssh/sshd_config 2>/dev/null || true
+    fi
 
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
     echo -e "  ${green}✔ OpenSSH configurado con soporte de contraseñas y keepalive.${plain}"
@@ -1185,11 +1189,11 @@ EOF
     mkdir -p /root/joif-core 2>/dev/null || true
     local env_file="/root/joif-core/.env"
     if [ -f "$env_file" ]; then
-        grep -q '^API_KEY=' "$env_file" || echo "API_KEY=joif2026" >> "$env_file"
-        grep -q '^NODE_API_SECRET=' "$env_file" || echo "NODE_API_SECRET=joif2026" >> "$env_file"
-        grep -q '^PORT=' "$env_file" || echo "PORT=3000" >> "$env_file"
+        grep -q '^API_KEY=' "$env_file" 2>/dev/null || echo "API_KEY=joif2026" >> "$env_file" 2>/dev/null || true
+        grep -q '^NODE_API_SECRET=' "$env_file" 2>/dev/null || echo "NODE_API_SECRET=joif2026" >> "$env_file" 2>/dev/null || true
+        grep -q '^PORT=' "$env_file" 2>/dev/null || echo "PORT=3000" >> "$env_file" 2>/dev/null || true
     else
-        cat << 'EOF' > "$env_file"
+        cat << 'EOF' > "$env_file" 2>/dev/null || true
 PORT=3000
 API_KEY=joif2026
 NODE_API_SECRET=joif2026
