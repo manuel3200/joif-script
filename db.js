@@ -12,6 +12,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('[DB] Conectado a SQLite exitosamente.');
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
+    db.run('ALTER TABLE users ADD COLUMN alias TEXT;', () => {});
   }
 });
 
@@ -45,6 +46,7 @@ const initDB = async () => {
           username TEXT NOT NULL UNIQUE,
           password TEXT NOT NULL,
           hwid TEXT,
+          alias TEXT,
           expiration_date TEXT NOT NULL,
           max_connections INTEGER DEFAULT 1,
           status TEXT DEFAULT 'active',

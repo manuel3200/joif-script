@@ -6,7 +6,8 @@ test('account validation prevents command injection and invalid dates', () => {
   assert.equal(security.validateAccount(good).date, '2099-12-01');
   const hwidAcc = security.validateAccount({ ...good, hwid: 'h9c69d562f2c697f7c15953eb6706e35' });
   assert.equal(hwidAcc.hwid, 'h9c69d562f2c697f7c15953eb6706e35');
-  assert.equal(hwidAcc.nativeName, 'testuser');
+  assert.equal(hwidAcc.nativeName, 'h9c69d562f2c697f7c15953eb6706e35');
+  assert.equal(hwidAcc.alias, 'testuser');
   for (const username of ['root', '-f', 'x;touch file', 'x\nroot']) assert.throws(() => security.validateAccount({ ...good, username }));
   assert.throws(() => security.validateAccount({ ...good, password: 'pass\nroot:evil' }));
   assert.throws(() => security.validateAccount({ ...good, expiration_date: '2099-02-30' }));

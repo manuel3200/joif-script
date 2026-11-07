@@ -101,7 +101,7 @@ app.post('/api/users/:username/config', authMiddleware, async (req, res) => {
 // Obtener todos los usuarios
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query('SELECT id, username, expiration_date, hwid, max_connections, status, created_at FROM users');
+    const result = await db.query('SELECT id, username, expiration_date, hwid, alias, max_connections, status, created_at FROM users');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -117,36 +117,38 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     const exists = await db.query('SELECT id FROM users WHERE username = ? OR (hwid IS NOT NULL AND hwid = ?)', [account.username, account.hwid || account.username]);
     if (exists.rowCount) return res.status(409).json({ error: 'La cuenta ya existe.' });
     if (process.platform === 'linux') {
-      await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--', account.nativeName]); created = true;
+      await security.run('sudo', ['-n', 'useradd', '-M', '-s', '/bin/false', '--badname', '--', account.nativeName]); created = true;
       await security.run('sudo', ['-n', 'chpasswd'], account.nativeName + ':' + account.password + '\n');
       await security.run('sudo', ['-n', 'chage', '-E', account.date, '--', account.nativeName]);
     }
-    const result = await db.query('INSERT INTO users (username, password, expiration_date, max_connections, hwid) VALUES (?, ?, ?, ?, ?)', [account.username, account.password, account.expiresAt, account.connections, account.hwid]);
-    res.status(201).json({ message: 'Usuario creado con éxito', id: result.lastID });
+    const result = await db.query('INSERT INTO users (username, password, expiration_date, max_connections, hwid, alias) VALUES (?, ?, ?, ?, ?, ?)', [account.username, account.password, account.expiresAt, account.connections, account.hwid, account.alias]);
+    res.status(201).json({ message: 'Usuario creado con éxito', id: result.lastID, username: account.username, alias: account.alias });
   } catch (e) {
-    if (created) { try { await security.run('sudo', ['-n', 'userdel', '--', account.nativeName]); } catch (_) { console.error('Requiere reconciliar cuenta Linux después de un alta fallida.'); } }
+    if (created) { try { await security.run('sudo', ['-n', 'userdel', '-f', '--', account.nativeName]); } catch (_) { console.error('Requiere reconciliar cuenta Linux después de un alta fallida.'); } }
     res.status(500).json({ error: 'No se pudo crear la cuenta. Revisa los registros del servidor.' });
   }
 });
 
 app.delete('/api/users/:username', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query('SELECT username, hwid FROM users WHERE username = ?', [req.params.username]);
+    const target = req.params.username;
+    const result = await db.query('SELECT id, username, hwid, alias FROM users WHERE username = ? OR hwid = ? OR alias = ?', [target, target, target]);
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    const nativeName = security.linuxName(result.rows[0].username);
+    const row = result.rows[0];
+    const nativeName = security.linuxName(row.username);
     if (process.platform === 'linux') {
       try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName]); } catch (e) { if (e.exitCode !== 1) console.error(e); }
       let exists = true; try { await security.run('getent', ['passwd', nativeName]); } catch (e) { if (e.exitCode === 2) exists = false; else throw e; }
       if (exists) await security.run('sudo', ['-n', 'userdel', '-f', '--', nativeName]);
     }
-    await db.query('DELETE FROM users WHERE username = ?', [req.params.username]);
+    await db.query('DELETE FROM users WHERE id = ?', [row.id]);
     res.json({ message: 'Usuario eliminado con éxito.' });
   } catch (e) { res.status(500).json({ error: 'No se pudo eliminar la cuenta; se conserva el registro para reintentar.' }); }
 });
 
 app.delete('/api/users', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query('SELECT username, hwid FROM users');
+    const result = await db.query('SELECT id, username, hwid, alias FROM users');
     if (process.platform === 'linux') {
       for (const row of result.rows) {
         const nativeName = security.linuxName(row.username);
@@ -161,15 +163,17 @@ app.delete('/api/users', authMiddleware, async (req, res) => {
 
 app.post('/api/users/:username/revoke', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query('SELECT username, hwid FROM users WHERE username = ?', [req.params.username]);
+    const target = req.params.username;
+    const result = await db.query('SELECT id, username, hwid, alias FROM users WHERE username = ? OR hwid = ? OR alias = ?', [target, target, target]);
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    const nativeName = security.linuxName(result.rows[0].username);
+    const row = result.rows[0];
+    const nativeName = security.linuxName(row.username);
     if (process.platform === 'linux') {
       await security.run('sudo', ['-n', 'usermod', '-L', '--', nativeName]);
       await security.run('sudo', ['-n', 'chage', '-E', '0', '--', nativeName]);
       try { await security.run('sudo', ['-n', 'pkill', '-u', nativeName, 'sshd']); } catch (e) { if (e.exitCode !== 1) throw e; }
     }
-    await db.query("UPDATE users SET status = 'revoked' WHERE username = ?", [req.params.username]);
+    await db.query("UPDATE users SET status = 'revoked' WHERE id = ?", [row.id]);
     res.json({ message: 'Cuenta revocada.' });
   } catch (e) { res.status(500).json({ error: 'No se pudo revocar la cuenta; reintenta la operación.' }); }
 });

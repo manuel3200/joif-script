@@ -494,13 +494,22 @@
 
       users.forEach(u => {
         const date = new Date(u.expiration_date).toLocaleDateString();
+        const displayName = u.alias || u.username;
         const encodedUsername = encodeURIComponent(u.username).replaceAll("'", "%27");
         const badgeClass = u.status === 'active' ? 'bg-tertiary/10 text-tertiary' : 'bg-error/10 text-error';
         const badgeDot = u.status === 'active' ? 'bg-tertiary' : 'bg-error';
         
         tbody.innerHTML += `
           <tr class="table-row-hover transition-colors">
-            <td class="py-4 px-6 font-bold text-white"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">${escHtml(u.username.charAt(0).toUpperCase())}</div>${escHtml(u.username)}</div></td>
+            <td class="py-4 px-6 font-bold text-white">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">${escHtml(displayName.charAt(0).toUpperCase())}</div>
+                <div>
+                  <div class="font-bold text-white">${escHtml(displayName)}</div>
+                  ${u.hwid ? `<div class="text-[10px] text-primary/70 font-code">ID: ${escHtml(u.hwid.substring(0,14))}...</div>` : ''}
+                </div>
+              </div>
+            </td>
             <td class="py-4 px-6 text-on-surface-variant">${date}</td>
             <td class="py-4 px-6 font-code text-on-surface-variant text-xs">${u.hwid ? escHtml(u.hwid.substring(0,12))+'...' : 'No binding'}</td>
             <td class="py-4 px-6 text-on-surface-variant">${u.max_connections}</td>
@@ -590,18 +599,22 @@
     const fHwid = document.getElementById('field-hwid');
     const fPass = document.getElementById('field-password');
     const fTimeLimit = document.getElementById('fields-time-limit');
+    const userLabel = fUser.querySelector('label');
 
     // Reset visibility
     fUser.classList.remove('hidden');
     fHwid.classList.add('hidden');
     fPass.classList.remove('hidden');
     fTimeLimit.classList.remove('hidden');
-    
+    userLabel.innerHTML = 'Username <span class="text-error">*</span>';
     document.getElementById('newUsername').placeholder = "e.g. client_01";
+    document.getElementById('newHwid').placeholder = "e.g. h9c69d562f2c697f7c15953eb6706e35";
 
     if (type === 'hwid') {
       fHwid.classList.remove('hidden');
       fPass.classList.add('hidden');
+      userLabel.innerHTML = 'Cliente (Identificación / Alias) <span class="text-error">*</span>';
+      document.getElementById('newUsername').placeholder = "e.g. manuel";
     } else if (type === 'demo') {
       fPass.classList.add('hidden');
       fTimeLimit.classList.add('hidden');
@@ -620,14 +633,17 @@
     let user = userEl.value.trim();
     let pass = passEl.value;
     let hwidVal = null;
+    let aliasVal = null;
     let limit = parseInt(document.getElementById('newLimit').value) || 1;
     const expDate = new Date();
     
     if (type === 'hwid') {
       hwidVal = hwidEl.value.trim();
-      if (!user) return alert("Username is required");
-      if (!hwidVal) return alert("Hardware ID is required");
-      pass = user; // Para HWID la contraseña coincide con el usuario
+      if (!user) return alert("El nombre o identificación del cliente es requerido");
+      if (!hwidVal) return alert("Hardware ID (HWID) es requerido");
+      aliasVal = user;
+      user = hwidVal;
+      pass = hwidVal; // En HTTP Custom el HWID se usa como usuario y contraseña
       limit = 1; // 1 dispositivo por HWID
       expDate.setDate(expDate.getDate() + parseInt(document.getElementById('newDays').value));
     } else if (type === 'demo') {
@@ -651,7 +667,10 @@
       expiration_date: expDate.toISOString(), 
       max_connections: limit 
     };
-    if (hwidVal) payload.hwid = hwidVal;
+    if (hwidVal) {
+      payload.hwid = hwidVal;
+      payload.alias = aliasVal;
+    }
 
     fetch('/api/users', {
       method: 'POST',

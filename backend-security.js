@@ -9,13 +9,6 @@ function linuxName(name) {
   return name;
 }
 function validateAccount(body) {
-  const username = linuxName(body.username), nativeName = username;
-  if (typeof body.password !== 'string' || !body.password || body.password.length > 256 || /[\r\n\0:]/.test(body.password)) throw Error('Contraseña inválida.');
-  if (typeof body.expiration_date !== 'string' || !/^\d{4}-\d{2}-\d{2}(T.*)?$/.test(body.expiration_date)) throw Error('Fecha inválida.');
-  const date = body.expiration_date.slice(0, 10), timestamp = Date.parse(body.expiration_date.length === 10 ? date + 'T00:00:00Z' : body.expiration_date);
-  if (!Number.isFinite(timestamp) || new Date(Date.parse(date + 'T00:00:00Z')).toISOString().slice(0, 10) !== date || timestamp <= Date.now()) throw Error('El vencimiento debe ser una fecha futura válida.');
-  const connections = body.max_connections === undefined ? 1 : Number(body.max_connections);
-  if (!Number.isInteger(connections) || connections < 1 || connections > 100) throw Error('El límite de conexiones debe estar entre 1 y 100.');
   let hwid = null;
   if (body.hwid && typeof body.hwid === 'string') {
     const trimmed = body.hwid.trim();
@@ -23,7 +16,23 @@ function validateAccount(body) {
       hwid = trimmed;
     }
   }
-  return { username, nativeName, password: body.password, date: new Date(Math.ceil(timestamp / 86400000) * 86400000).toISOString().slice(0, 10), expiresAt: new Date(timestamp).toISOString(), connections, hwid };
+
+  const alias = typeof body.alias === 'string' && body.alias.trim() 
+    ? body.alias.trim() 
+    : (typeof body.client_name === 'string' && body.client_name.trim() ? body.client_name.trim() : (typeof body.username === 'string' ? body.username.trim() : null));
+
+  const username = hwid ? linuxName(hwid) : linuxName(body.username);
+  const nativeName = username;
+  const password = hwid ? hwid : body.password;
+
+  if (typeof password !== 'string' || !password || password.length > 256 || /[\r\n\0:]/.test(password)) throw Error('Contraseña inválida.');
+  if (typeof body.expiration_date !== 'string' || !/^\d{4}-\d{2}-\d{2}(T.*)?$/.test(body.expiration_date)) throw Error('Fecha inválida.');
+  const date = body.expiration_date.slice(0, 10), timestamp = Date.parse(body.expiration_date.length === 10 ? date + 'T00:00:00Z' : body.expiration_date);
+  if (!Number.isFinite(timestamp) || new Date(Date.parse(date + 'T00:00:00Z')).toISOString().slice(0, 10) !== date || timestamp <= Date.now()) throw Error('El vencimiento debe ser una fecha futura válida.');
+  const connections = body.max_connections === undefined ? 1 : Number(body.max_connections);
+  if (!Number.isInteger(connections) || connections < 1 || connections > 100) throw Error('El límite de conexiones debe estar entre 1 y 100.');
+
+  return { username, nativeName, password, date: new Date(Math.ceil(timestamp / 86400000) * 86400000).toISOString().slice(0, 10), expiresAt: new Date(timestamp).toISOString(), connections, hwid, alias: alias || username };
 }
 function hashPassword(value) {
   const salt = crypto.randomBytes(16).toString('hex');

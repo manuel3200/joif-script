@@ -52,10 +52,10 @@ menu_crear_usuario() {
         echo -e "${cyan}      =====>>►► ${green}🐲 JOIF 💥 Cloud 🐲${cyan} ◄◄<<=====${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-        read -p "$(echo -e ${white}" Ingrese Nombre del Cliente: "${plain})" user
-        user=$(echo "$user" | tr -d '[:space:]')
-        if [ -z "$user" ]; then
-            echo -e "${red}Error: Debes ingresar el nombre del cliente.${plain}"
+        read -p "$(echo -e ${white}" Ingrese Nombre del Cliente (Identificación): "${plain})" client_name
+        client_name=$(echo "$client_name" | tr -d '[:space:]')
+        if [ -z "$client_name" ]; then
+            echo -e "${red}Error: Debes ingresar el nombre del cliente para identificarlo.${plain}"
             sleep 2
             return
         fi
@@ -65,7 +65,7 @@ menu_crear_usuario() {
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e ""
-        echo -e " ${yellow}INGRESA HWID PARA ${white}$user${plain}"
+        echo -e " ${yellow}INGRESA HWID PARA ${white}$client_name${plain}"
         read -p "$(echo -e ${yellow}" HWID: "${green})" hwid
         echo -e "${plain}"
         hwid=$(echo "$hwid" | tr -d '[:space:]')
@@ -80,20 +80,19 @@ menu_crear_usuario() {
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e ""
-        echo -e " ${yellow}TIEMPO DE DURACION EN DIAS PARA ${white}$user${plain}"
+        echo -e " ${yellow}TIEMPO DE DURACION EN DIAS PARA ${white}$client_name${plain}"
         read -p "$(echo -e ${yellow}" VALIDEZ : "${green})" days
         echo -e "${plain}"
         [[ -z "$days" ]] && days=30
 
-        # Para HWID no pide contraseña (se sincroniza con el usuario) ni límite manual (1 dispositivo)
-        pass="$user"
-        max_conn=1
+        # Para HTTP Custom: El ID de hardware actúa automáticamente como usuario y contraseña
+        # El nombre del cliente es únicamente la etiqueta humana de identificación
         exp_date=$(date -d "+$days days" --iso-8601=seconds)
         exp_display=$(date -d "+$days days" +"%d/%m/%Y")
 
         echo -e "${blue}Registrando cuenta HWID en el sistema...${plain}"
         curl -s -X POST $API_URL -H "Content-Type: application/json" -H "x-api-key: $LOCAL_API_KEY" \
-            -d "{\"username\": \"$user\", \"password\": \"$pass\", \"expiration_date\": \"$exp_date\", \"max_connections\": 1, \"hwid\": \"$hwid\"}" > /dev/null
+            -d "{\"hwid\": \"$hwid\", \"alias\": \"$client_name\", \"expiration_date\": \"$exp_date\", \"max_connections\": 1}" > /dev/null
 
         DOMAIN=$(cat /root/.JOIF_domain 2>/dev/null || echo "$IP")
         clear
@@ -110,7 +109,7 @@ menu_crear_usuario() {
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e " DOMAIN          : ${white}$DOMAIN${plain}"
         echo -e " Host/IP-Address : ${white}$IP${plain}"
-        echo -e " USUARIO         : ${white}$user${plain}"
+        echo -e " USUARIO         : ${white}$client_name${plain}"
         echo -e " HWID            : ${green}$hwid${plain}"
         echo -e " VALIDEZ         : ${white}$exp_display${plain}"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -400,12 +399,13 @@ menu_usuarios() {
                             echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
                             
                             idx=1
-                            sqlite3 -separator '|' /root/joif-core/database.sqlite "SELECT username, hwid FROM users;" | while read -r line; do
+                            sqlite3 -separator '|' /root/joif-core/database.sqlite "SELECT username, hwid, COALESCE(alias, username) FROM users;" | while read -r line; do
                                 uname=$(echo "$line" | cut -d'|' -f1)
                                 uhwid=$(echo "$line" | cut -d'|' -f2)
+                                ualias=$(echo "$line" | cut -d'|' -f3)
                                 
                                 if [ -n "$uhwid" ]; then
-                                    str="${uname} ->"
+                                    str="${ualias} ->"
                                     printf " ${white}[%s] ➮ %-30s ${green}[HWID]${plain}\n" "$idx" "$str"
                                     echo -e "    ${green}⤷  ${white}${uhwid}${plain}  "
                                 else
