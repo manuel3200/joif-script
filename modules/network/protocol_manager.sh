@@ -412,8 +412,8 @@ gestionar_xray_vless() {
                 read -p "$(echo -e ${white}"Presiona Enter para usar este UUID o escribe uno personalizado: "${plain})" custom_uuid
                 local final_uuid="${custom_uuid:-$default_uuid}"
 
-                read -p "$(echo -e ${white}"Ruta / Path WebSocket [por defecto /usa1]: "${plain})" custom_path
-                local final_path="${custom_path:-/usa1}"
+                read -p "$(echo -e ${white}"Ruta / Path WebSocket [por defecto /]: "${plain})" custom_path
+                local final_path="${custom_path:-/}"
 
                 # 5. Escribir configuración
                 rm -rf /etc/systemd/system/xray.service.d 2>/dev/null || true
