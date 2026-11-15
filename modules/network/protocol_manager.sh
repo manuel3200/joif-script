@@ -167,6 +167,7 @@ try:
             sys.exit(0)
     clients.append({
         'id': '$final_uid',
+        'alterId': 0,
         'email': '$u_alias',
         'level': 0
     })
@@ -269,7 +270,7 @@ try:
         print('INVALID_INDEX')
         sys.exit(0)
     target = clients[idx]
-    path = data['inbounds'][0].get('streamSettings', {}).get('httpupgradeSettings', {}).get('path', '/')
+    path = data['inbounds'][0].get('streamSettings', {}).get('wsSettings', {}).get('path') or data['inbounds'][0].get('streamSettings', {}).get('httpupgradeSettings', {}).get('path', '/')
     print(f'DATA|{target.get(\"email\", \"usuario\")}|{target.get(\"id\", \"\")}|{path}')
 except Exception as e:
     print('ERROR:' + str(e))
@@ -411,8 +412,8 @@ gestionar_xray_vless() {
                 read -p "$(echo -e ${white}"Presiona Enter para usar este UUID o escribe uno personalizado: "${plain})" custom_uuid
                 local final_uuid="${custom_uuid:-$default_uuid}"
 
-                read -p "$(echo -e ${white}"Ruta HTTPUpgrade / Path [por defecto / ]: "${plain})" custom_path
-                local final_path="${custom_path:-/}"
+                read -p "$(echo -e ${white}"Ruta / Path WebSocket [por defecto /usa1]: "${plain})" custom_path
+                local final_path="${custom_path:-/usa1}"
 
                 # 5. Escribir configuración
                 rm -rf /etc/systemd/system/xray.service.d 2>/dev/null || true
@@ -427,21 +428,21 @@ gestionar_xray_vless() {
   "inbounds": [
     {
       "port": 80,
-      "protocol": "vless",
+      "protocol": "vmess",
       "settings": {
         "clients": [
           {
             "id": "$final_uuid",
+            "alterId": 0,
             "email": "user@joif.vpn",
             "level": 0
           }
-        ],
-        "decryption": "none"
+        ]
       },
       "streamSettings": {
-        "network": "httpupgrade",
+        "network": "ws",
         "security": "none",
-        "httpupgradeSettings": {
+        "wsSettings": {
           "path": "$final_path"
         }
       },
