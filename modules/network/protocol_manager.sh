@@ -88,6 +88,281 @@ liberar_puerto_80() {
     fi
 }
 
+gestionar_xray_vless() {
+    while true; do
+        clear
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ⚡ ${yellow}GESTOR XRAY VLESS HTTPUPGRADE (PUERTO 80)${plain}"
+        echo -e "   ${green}Máxima velocidad (Zero-Overhead) + Bypass DPI + Payload HTTP${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+
+        local xray_active=0
+        if systemctl is-active --quiet xray; then
+            xray_active=1
+            local xray_pid=$(pgrep -f "xray.*run" 2>/dev/null | head -n1)
+            echo -e " ${green}● Xray VLESS se encuentra ACTIVO (PID: ${xray_pid:-OK}) en puerto 80.${plain}\n"
+        else
+            echo -e " ${red}○ Xray VLESS se encuentra INACTIVO o no configurado.${plain}\n"
+        fi
+
+        echo -e " ${green}[1]${plain} > ⚡ Instalar / Reconfigurar Servidor Xray VLESS (Puerto 80)"
+        if [ "$xray_active" -eq 1 ]; then
+            echo -e " ${green}[2]${plain} > 📋 Ver Parámetros de Conexión y VLESS Link (Para la App)"
+            echo -e " ${green}[3]${plain} > 🔑 Gestionar / Actualizar Cliente UUID"
+            echo -e " ${green}[4]${plain} > 🔄 Reiniciar Servicio Xray"
+            echo -e " ${red}[5]${plain} > 🛑 Detener Xray y Liberar Puerto 80"
+        fi
+        echo -e " ${white}[0]${plain} > 🔙 Volver al menú anterior"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        read -p "$(echo -e ${white}"Selecciona una opción: "${plain})" xr_opt
+
+        case $xr_opt in
+            1)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " 🚀 ${yellow}INSTALACIÓN Y CONFIGURACIÓN XRAY VLESS${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+
+                # 1. Verificar dependencias
+                export DEBIAN_FRONTEND=noninteractive
+                export NEEDRESTART_MODE=a
+                if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null || ! command -v uuidgen &>/dev/null; then
+                    echo -e " ${yellow}[*] Instalando dependencias del sistema...${plain}"
+                    apt-get update -qq && apt-get install -y -qq curl unzip uuid-runtime jq > /dev/null 2>&1
+                fi
+
+                # 2. Descargar o instalar binario oficial de Xray
+                if [ ! -x "/usr/local/bin/xray" ]; then
+                    echo -e " ${yellow}[*] Descargando e instalando núcleo Xray oficial...${plain}"
+                    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install > /dev/null 2>&1
+                fi
+
+                if [ ! -x "/usr/local/bin/xray" ]; then
+                    # Fallback descarga directa
+                    local arch=$(uname -m)
+                    local pkg_arch="64"
+                    case "$arch" in
+                        x86_64|amd64) pkg_arch="64" ;;
+                        aarch64|arm64) pkg_arch="arm64-v8a" ;;
+                        armv7*|armhf) pkg_arch="arm32-v7a" ;;
+                    esac
+                    echo -e " ${yellow}[*] Descarga directa de GitHub Releases (Arch: $pkg_arch)...${plain}"
+                    mkdir -p /tmp/xray_dl
+                    wget -qO /tmp/xray_dl/xray.zip "https://github.com/XTLS/Xray-core/releases/download/v26.11.9/Xray-linux-${pkg_arch}.zip"
+                    unzip -qo /tmp/xray_dl/xray.zip -d /tmp/xray_dl
+                    mv /tmp/xray_dl/xray /usr/local/bin/xray
+                    chmod +x /usr/local/bin/xray
+                    mkdir -p /usr/local/share/xray
+                    cp /tmp/xray_dl/*.dat /usr/local/share/xray/ 2>/dev/null || true
+                    rm -rf /tmp/xray_dl
+                fi
+
+                if [ ! -x "/usr/local/bin/xray" ]; then
+                    echo -e "${red}❌ Error: No se pudo instalar el binario de Xray.${plain}"
+                    pause
+                    continue
+                fi
+
+                echo -e " ${green}✔ Núcleo Xray verificado: $(/usr/local/bin/xray version | head -n1)${plain}"
+
+                # 3. Liberar puerto 80 (detener joif-proxy si estaba corriendo)
+                if systemctl is-active --quiet joif-proxy; then
+                    echo -e " ${yellow}[!] El Proxy WebSocket (joif-proxy) está activo en puerto 80.${plain}"
+                    echo -e " ${yellow}[*] Deteniendo joif-proxy para asignar puerto 80 a Xray VLESS...${plain}"
+                    systemctl stop joif-proxy 2>/dev/null || true
+                    systemctl disable joif-proxy 2>/dev/null || true
+                fi
+                liberar_puerto_80
+
+                # 4. Parámetros de configuración
+                local default_uuid=$(uuidgen 2>/dev/null || /usr/local/bin/xray uuid 2>/dev/null || echo "11111111-2222-3333-4444-555555555555")
+                echo -e "\n ${white}Generando identificador UUID para el cliente...${plain}"
+                echo -e " UUID asignado: ${green}$default_uuid${plain}"
+                read -p "$(echo -e ${white}"Presiona Enter para usar este UUID o escribe uno personalizado: "${plain})" custom_uuid
+                local final_uuid="${custom_uuid:-$default_uuid}"
+
+                read -p "$(echo -e ${white}"Ruta HTTPUpgrade / Path [por defecto / ]: "${plain})" custom_path
+                local final_path="${custom_path:-/}"
+
+                # 5. Escribir configuración
+                mkdir -p /usr/local/etc/xray /var/log/xray
+                cat << EOF > /usr/local/etc/xray/config.json
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log"
+  },
+  "inbounds": [
+    {
+      "port": 80,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$final_uuid",
+            "email": "user@joif.vpn",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "httpupgrade",
+        "security": "none",
+        "httpupgradeSettings": {
+          "path": "$final_path"
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls"]
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "blocked"
+    }
+  ]
+}
+EOF
+
+                # 6. Servicio Systemd
+                cat << 'EOF' > /etc/systemd/system/xray.service
+[Unit]
+Description=Xray VLESS Service (Port 80 HTTPUpgrade)
+Documentation=https://github.com/xtls
+After=network.target nss-lookup.target
+
+[Service]
+User=root
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                systemctl daemon-reload
+                systemctl enable xray >/dev/null 2>&1
+                systemctl restart xray
+
+                # 7. Firewall
+                if command -v iptables &>/dev/null; then
+                    iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT >/dev/null 2>&1 || true
+                fi
+                if command -v ufw &>/dev/null; then
+                    ufw allow 80/tcp >/dev/null 2>&1 || true
+                fi
+
+                sleep 2
+                if systemctl is-active --quiet xray; then
+                    local my_ip=$(curl -s -m 4 https://api.ipify.org || curl -s -m 4 ifconfig.me || echo "IP_DEL_VPS")
+                    echo -e "\n${green}✅ ¡Xray VLESS HTTPUpgrade instalado y ACTIVO en el puerto 80!${plain}\n"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e " 📱 ${yellow}PARÁMETROS PARA LA APLICACIÓN ANDROID:${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e "  • Protocolo:     ${green}VLESS (HTTPUpgrade)${plain}"
+                    echo -e "  • Host / IP:     ${white}$my_ip${plain}"
+                    echo -e "  • Puerto:        ${green}80${plain}"
+                    echo -e "  • UUID:          ${yellow}$final_uuid${plain}"
+                    echo -e "  • Path / Ruta:   ${white}$final_path${plain}"
+                    echo -e "  • Transporte:    ${green}httpupgrade${plain}"
+                    echo -e "  • Seguridad:     ${white}none (texto plano para payload)${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    local vless_link="vless://${final_uuid}@${my_ip}:80?path=$(echo -n "$final_path" | jq -sRr @uri 2>/dev/null || echo "%2F")&security=none&encryption=none&type=httpupgrade#JOIF-VLESS-80"
+                    echo -e "  🔗 Link VLESS:  ${cyan}$vless_link${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                else
+                    echo -e "\n${red}❌ Error: No se pudo iniciar el servicio xray. Logs:${plain}"
+                    journalctl -u xray -n 12 --no-pager 2>/dev/null
+                fi
+                pause
+                ;;
+
+            2)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " 📋 ${yellow}DATOS DE CONEXIÓN XRAY VLESS (PUERTO 80)${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                if [ -f "/usr/local/etc/xray/config.json" ]; then
+                    local my_ip=$(curl -s -m 4 https://api.ipify.org || curl -s -m 4 ifconfig.me || echo "IP_DEL_VPS")
+                    local cur_uuid=$(grep -oE '"id":\s*"[^"]+"' /usr/local/etc/xray/config.json | head -n1 | cut -d'"' -f4)
+                    local cur_path=$(grep -oE '"path":\s*"[^"]+"' /usr/local/etc/xray/config.json | head -n1 | cut -d'"' -f4)
+                    echo -e "  • Estado:        ${green}Activo en Puerto 80${plain}"
+                    echo -e "  • Servidor IP:   ${white}$my_ip${plain}"
+                    echo -e "  • Puerto:        ${green}80${plain}"
+                    echo -e "  • UUID Activo:   ${yellow}$cur_uuid${plain}"
+                    echo -e "  • Path:          ${white}${cur_path:-/}${plain}"
+                    echo -e "  • Transporte:    ${green}httpupgrade (Fast Anti-DPI)${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    local vless_link="vless://${cur_uuid}@${my_ip}:80?path=%2F&security=none&encryption=none&type=httpupgrade#JOIF-VLESS-80"
+                    echo -e "  🔗 Link VLESS:  ${cyan}$vless_link${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                else
+                    echo -e "${yellow}No se encontró configuración activa de Xray en /usr/local/etc/xray/config.json${plain}"
+                fi
+                pause
+                ;;
+
+            3)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " 🔑 ${yellow}GESTIÓN DE CLIENTES UUID${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                local new_uuid=$(uuidgen 2>/dev/null || /usr/local/bin/xray uuid 2>/dev/null)
+                echo -e " Nuevo UUID sugerido: ${green}$new_uuid${plain}\n"
+                read -p "$(echo -e ${white}"Escribe nuevo UUID (o Enter para aplicar el sugerido): "${plain})" input_u
+                local apply_uuid="${input_u:-$new_uuid}"
+                if [ -n "$apply_uuid" ] && [ -f "/usr/local/etc/xray/config.json" ]; then
+                    sed -i -E "s/\"id\":\s*\"[^\"]+\"/\"id\": \"$apply_uuid\"/g" /usr/local/etc/xray/config.json
+                    systemctl restart xray
+                    echo -e "${green}✔ UUID actualizado a: $apply_uuid y servicio reiniciado.${plain}"
+                fi
+                pause
+                ;;
+
+            4)
+                echo -e "\n${yellow}[*] Reiniciando servicio Xray...${plain}"
+                systemctl restart xray
+                sleep 1
+                if systemctl is-active --quiet xray; then
+                    echo -e "${green}✔ Xray reiniciado correctamente.${plain}"
+                else
+                    echo -e "${red}❌ Error reiniciando Xray.${plain}"
+                fi
+                pause
+                ;;
+
+            5)
+                echo -e "\n${yellow}[*] Deteniendo servicio Xray y liberando puerto 80...${plain}"
+                systemctl stop xray 2>/dev/null || true
+                systemctl disable xray 2>/dev/null || true
+                if command -v fuser &>/dev/null; then
+                    fuser -k -9 80/tcp >/dev/null 2>&1 || true
+                fi
+                echo -e "${green}✔ Servicio Xray detenido. Puerto 80 liberado.${plain}"
+                pause
+                ;;
+
+            0) break ;;
+            *) echo -e "${red}Opción inválida${plain}"; sleep 1 ;;
+        esac
+    done
+}
+
 while true; do
     clear
     draw_header
@@ -97,6 +372,7 @@ while true; do
     echo -e " ${green}[2]${plain} > 🎮 BadVPN UDP-GW (Puertos 7300 y 7200 - Juegos y Llamadas)"
     echo -e " ${green}[3]${plain} > 🔒 SSL / TLS Stunnel (Puerto 443 -> WS 80 o SSH 22)"
     echo -e " ${green}[4]${plain} > 📊 Estado de Protocolos en Vivo"
+    echo -e " ${green}[5]${plain} > ⚡ Xray VLESS HTTPUpgrade (Puerto 80 - Anti-DPI)"
     echo -e " ${green}[30]${plain}> 🛠  Herramientas Extras"
     echo -e " ${red}[0]${plain} > 🔙 Volver al menú principal"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -465,7 +741,18 @@ EOF
                 echo -e "${red}[INACTIVO]${plain}"
             fi
 
+            printf "  • %-28s " "Xray VLESS (Puerto 80)"
+            if systemctl is-active --quiet xray; then
+                echo -e "${green}[ACTIVO - ONLINE]${plain}"
+            else
+                echo -e "${red}[INACTIVO]${plain}"
+            fi
+
             pause
+            ;;
+
+        5)
+            gestionar_xray_vless
             ;;
 
         30)

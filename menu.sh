@@ -1011,6 +1011,7 @@ menu_herramientas() {
         echo -e " ${green}[4]${plain} > 💾 Memoria Virtual SWAP (Crear / Optimizar)"
         echo -e " ${green}[5]${plain} > 📦 Backup y Restauración de Cuentas"
         echo -e " ${green}[6]${plain} > ⚡ Autoconfigurar VPS para Portal Web (Auto-Link)"
+        echo -e " ${green}[7]${plain} > ⚡ Gestor Xray VLESS HTTPUpgrade (Puerto 80)"
         echo -e " ${red}[0]${plain} > 🔙 Volver al menú principal"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         read -p "$(echo -e ${white}"Selecciona una opción: "${plain})" opt_tools
@@ -1049,6 +1050,13 @@ menu_herramientas() {
                 ;;
             6)
                 autoconfigurar_portal_web
+                ;;
+            7)
+                if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
+                    bash -c "source /root/joif-core/core/utils.sh 2>/dev/null; source /root/joif-core/modules/network/protocol_manager.sh; gestionar_xray_vless"
+                elif [ -f "$SCRIPT_DIR/modules/network/protocol_manager.sh" ]; then
+                    bash -c "source $SCRIPT_DIR/core/utils.sh 2>/dev/null; source $SCRIPT_DIR/modules/network/protocol_manager.sh; gestionar_xray_vless"
+                fi
                 ;;
             0|00)
                 break
@@ -1465,7 +1473,7 @@ while true; do
     echo -e " ${green}[02]${plain} ➮ 🛠️  HERRAMIENTAS DEL SISTEMA "
     echo -e " ${green}[03]${plain} ➮ 👁️  MONITOR DE USUARIOS EN LÍNEA  [ ${green}${online_count}${plain} ]"
     echo -e " ${green}[04]${plain} ➮ ⚡ AUTOINICIAR SCRIPT AL ENTRAR   ${autostart_badge}"
-    echo -e " ${green}[05]${plain} ➮ 📡 INSTALADOR DE PROTOCOLOS (WS, BadVPN, SSL)"
+    echo -e " ${green}[05]${plain} ➮ 📡 INSTALADOR DE PROTOCOLOS (WS, BadVPN, SSL, Xray)"
     echo -e " ${green}[06]${plain} ➮ ⚡ VINCULAR CON TIENDA WEB (Auto-Link)"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ${green}[07]${plain} ➮ 🔄 GESTIÓN / ACTUALIZAR SCRIPT  |  ${red}[0]${plain} ⇦ [ SALIR ]"
