@@ -38,14 +38,27 @@ menu_crear_usuario() {
     echo -e " ${green}[02]${plain}  > SSH|DROPBEAR "
     echo -e " ${green}[03]${plain}  > HWID         "
     echo -e " ${green}[04]${plain}  > TOKEN "
+    echo -e " ${green}[05]${plain}  > XRAY VLESS (UUID / Dispositivo Móvil) ⚡"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${green}[05]${plain}  > MODIFICAR CONTRASEÑA TOKEN "
+    echo -e " ${green}[06]${plain}  > MODIFICAR CONTRASEÑA TOKEN "
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ${red}[00]${plain}  ⇦ [ VOLVER ]"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     read -p "$(echo -e ${white}" ► Opcion : "${plain})" opt_crear
     
     if [ "$opt_crear" = "0" ] || [ "$opt_crear" = "00" ]; then
+        return
+    fi
+
+    # CREADOR / GESTOR DE USUARIOS XRAY VLESS (UUID)
+    if [ "$opt_crear" = "5" ] || [ "$opt_crear" = "05" ]; then
+        if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
+            source /root/joif-core/modules/network/protocol_manager.sh
+            menu_usuarios_xray
+        elif [ -f "./modules/network/protocol_manager.sh" ]; then
+            source ./modules/network/protocol_manager.sh
+            menu_usuarios_xray
+        fi
         return
     fi
 
@@ -366,6 +379,7 @@ menu_usuarios() {
         
         echo -e " ${green}[13]${plain} ➮ 🚀 ACTIVAR / REINSTALAR API CheckUser ( ${checkuser_status} )"
         echo -e " ${green}[14]${plain} ➮ 🔒 CONTROL DE ADMINISTRACION MULTILOGINS ( $ ) "
+        echo -e " ${green}[15]${plain} ➮ ⚡ ADMINISTRAR USUARIOS XRAY VLESS (UUID) 📱"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e "  ${red}[0]${plain} ➮ [ REGRESAR ]"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -993,6 +1007,15 @@ EOF
                 ;;
             13|013)
                 instalar_api_checkuser
+                ;;
+            15|015)
+                if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
+                    source /root/joif-core/modules/network/protocol_manager.sh
+                    menu_usuarios_xray
+                elif [ -f "./modules/network/protocol_manager.sh" ]; then
+                    source ./modules/network/protocol_manager.sh
+                    menu_usuarios_xray
+                fi
                 ;;
             0|00) break ;;
             *) echo -e "${red}Opción en construcción o inválida${plain}"; sleep 1 ;;

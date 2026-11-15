@@ -88,6 +88,236 @@ liberar_puerto_80() {
     fi
 }
 
+menu_usuarios_xray() {
+    local config_file="/usr/local/etc/xray/config.json"
+    if [ ! -f "$config_file" ]; then
+        echo -e "\n ${red}❌ Error: No existe configuración de Xray en $config_file${plain}"
+        echo -e " ${yellow}Por favor instala Xray VLESS primero (Opción [1]).${plain}"
+        pause
+        return
+    fi
+
+    while true; do
+        clear
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " 👥 ${yellow}ADMINISTRADOR DE USUARIOS XRAY VLESS (UUID)${plain}"
+        echo -e "    ${green}Acceso por Dispositivo / Multi-Usuario Seguro${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+
+        python3 -c "
+import json, sys
+try:
+    with open('$config_file', 'r') as f:
+        data = json.load(f)
+    clients = data.get('inbounds', [{}])[0].get('settings', {}).get('clients', [])
+    if not clients:
+        print('  \033[1;33mNo hay usuarios registrados actualmente.\033[0m')
+    else:
+        print('  \033[1;37mUSUARIOS REGISTRADOS:\033[0m')
+        print('  \033[0;36m┌──────┬──────────────────────┬──────────────────────────────────────┐\033[0m')
+        print('  \033[0;36m│  #   │ Alias / Usuario      │ UUID / Device ID                     │\033[0m')
+        print('  \033[0;36m├──────┼──────────────────────┼──────────────────────────────────────┤\033[0m')
+        for idx, c in enumerate(clients, 1):
+            email = str(c.get('email', 'sin-nombre'))[:20]
+            uid = str(c.get('id', 'N/A'))
+            print(f'  \033[0;36m│\033[0m \033[1;37m{idx:<4}\033[0m \033[0;36m│\033[0m \033[0;32m{email:<20}\033[0m \033[0;36m│\033[0m \033[1;33m{uid:<36}\033[0m \033[0;36m│\033[0m')
+        print('  \033[0;36m└──────┴──────────────────────┴──────────────────────────────────────┘\033[0m')
+        print(f'  Total usuarios: \033[0;32m{len(clients)}\033[0m\n')
+except Exception as e:
+    print('  \033[0;31mError leyendo configuración: ' + str(e) + '\033[0m')
+"
+
+        echo -e " ${green}[1]${plain} > ➕ Crear / Registrar Nuevo Usuario (Asignar o Pegar UUID)"
+        echo -e " ${green}[2]${plain} > 🗑  Eliminar Usuario Registrado"
+        echo -e " ${green}[3]${plain} > 📋 Ver Enlace VLESS y Datos de un Usuario"
+        echo -e " ${green}[4]${plain} > 🔄 Reiniciar Servicio Xray"
+        echo -e " ${white}[0]${plain} > 🔙 Volver al menú anterior"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        read -p "$(echo -e ${white}"Selecciona una opción: "${plain})" opt_u
+
+        case $opt_u in
+            1)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " ➕ ${yellow}CREAR NUEVO USUARIO XRAY VLESS${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                read -p "$(echo -e ${white}"Nombre o Alias del cliente (ej: celular-manuel): "${plain})" u_alias
+                u_alias=$(echo "$u_alias" | tr -d '[:space:]')
+                if [ -z "$u_alias" ]; then
+                    u_alias="usuario-$(date +%s)"
+                fi
+
+                local gen_uuid=$(uuidgen 2>/dev/null || /usr/local/bin/xray uuid 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+                echo -e "\n ${white}Identificador UUID:${plain}"
+                echo -e " UUID sugerido: ${green}$gen_uuid${plain}"
+                echo -e " ${yellow}(Consejo: En la app puedes tocar [ 📋 Copiar ID ] y pegarlo aquí)${plain}"
+                read -p "$(echo -e ${white}"Pega el UUID del dispositivo (o Enter para usar el sugerido): "${plain})" input_uid
+                local final_uid="${input_uid:-$gen_uuid}"
+                final_uid=$(echo "$final_uid" | tr -d '[:space:]')
+
+                python3 -c "
+import json, sys
+try:
+    with open('$config_file', 'r') as f:
+        data = json.load(f)
+    clients = data['inbounds'][0]['settings'].setdefault('clients', [])
+    for c in clients:
+        if c.get('id') == '$final_uid':
+            print('EXISTS_UUID')
+            sys.exit(0)
+    clients.append({
+        'id': '$final_uid',
+        'email': '$u_alias',
+        'level': 0
+    })
+    with open('$config_file', 'w') as f:
+        json.dump(data, f, indent=2)
+    print('OK')
+except Exception as e:
+    print('ERROR:' + str(e))
+" > /tmp/xray_add_res.txt
+                local res=$(cat /tmp/xray_add_res.txt 2>/dev/null)
+                rm -f /tmp/xray_add_res.txt
+
+                if [ "$res" = "OK" ]; then
+                    systemctl restart xray
+                    local my_ip=$(curl -s -m 4 https://api.ipify.org || curl -s -m 4 ifconfig.me || echo "IP_DEL_VPS")
+                    local cur_path=$(grep -oE '"path":\s*"[^"]+"' "$config_file" | head -n1 | cut -d'"' -f4)
+                    [ -z "$cur_path" ] && cur_path="/"
+                    local vless_link="vless://${final_uid}@${my_ip}:80?path=$(echo -n "$cur_path" | jq -sRr @uri 2>/dev/null || echo "%2F")&security=none&encryption=none&type=httpupgrade#${u_alias}"
+
+                    echo -e "\n${green}✔ Usuario '${u_alias}' agregado y servicio Xray reiniciado exitosamente.${plain}\n"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e "  • Alias:        ${white}$u_alias${plain}"
+                    echo -e "  • UUID:         ${yellow}$final_uid${plain}"
+                    echo -e "  • Servidor IP:  ${white}$my_ip${plain}"
+                    echo -e "  • Puerto:       ${green}80${plain}"
+                    echo -e "  • Path:         ${white}$cur_path${plain}"
+                    echo -e "  • Protocolo:    ${green}VLESS (HTTPUpgrade)${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e "  🔗 Link VLESS:  ${cyan}$vless_link${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                elif [ "$res" = "EXISTS_UUID" ]; then
+                    echo -e "\n${yellow}⚠️ El UUID ingresado ya se encuentra registrado para otro cliente.${plain}"
+                else
+                    echo -e "\n${red}❌ Error agregando usuario: $res${plain}"
+                fi
+                pause
+                ;;
+
+            2)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " 🗑  ${yellow}ELIMINAR USUARIO XRAY VLESS${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                read -p "$(echo -e ${white}"Ingresa el número (#) del usuario a eliminar (o 0 para cancelar): "${plain})" del_num
+                if [ -z "$del_num" ] || [ "$del_num" = "0" ]; then
+                    continue
+                fi
+
+                python3 -c "
+import json, sys
+try:
+    with open('$config_file', 'r') as f:
+        data = json.load(f)
+    clients = data['inbounds'][0]['settings'].get('clients', [])
+    idx = int('$del_num') - 1
+    if idx < 0 or idx >= len(clients):
+        print('INVALID_INDEX')
+        sys.exit(0)
+    removed = clients.pop(idx)
+    with open('$config_file', 'w') as f:
+        json.dump(data, f, indent=2)
+    name = removed.get('email', removed.get('id', 'N/A'))
+    print('OK:' + str(name))
+except Exception as e:
+    print('ERROR:' + str(e))
+" > /tmp/xray_del_res.txt
+                local d_res=$(cat /tmp/xray_del_res.txt 2>/dev/null)
+                rm -f /tmp/xray_del_res.txt
+
+                if [[ "$d_res" == OK:* ]]; then
+                    local removed_name="${d_res#OK:}"
+                    systemctl restart xray
+                    echo -e "\n${green}✔ Usuario '${removed_name}' eliminado correctamente y servicio reiniciado.${plain}"
+                elif [ "$d_res" = "INVALID_INDEX" ]; then
+                    echo -e "\n${red}❌ Número de usuario inválido.${plain}"
+                else
+                    echo -e "\n${red}❌ Error eliminando usuario: $d_res${plain}"
+                fi
+                pause
+                ;;
+
+            3)
+                clear
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                echo -e " 📋 ${yellow}VER DATOS Y ENLACE VLESS DE UN USUARIO${plain}"
+                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                read -p "$(echo -e ${white}"Ingresa el número (#) del usuario (o 0 para cancelar): "${plain})" view_num
+                if [ -z "$view_num" ] || [ "$view_num" = "0" ]; then
+                    continue
+                fi
+
+                python3 -c "
+import json, sys
+try:
+    with open('$config_file', 'r') as f:
+        data = json.load(f)
+    clients = data['inbounds'][0]['settings'].get('clients', [])
+    idx = int('$view_num') - 1
+    if idx < 0 or idx >= len(clients):
+        print('INVALID_INDEX')
+        sys.exit(0)
+    target = clients[idx]
+    path = data['inbounds'][0].get('streamSettings', {}).get('httpupgradeSettings', {}).get('path', '/')
+    print(f'DATA|{target.get(\"email\", \"usuario\")}|{target.get(\"id\", \"\")}|{path}')
+except Exception as e:
+    print('ERROR:' + str(e))
+" > /tmp/xray_view_res.txt
+                local v_res=$(cat /tmp/xray_view_res.txt 2>/dev/null)
+                rm -f /tmp/xray_view_res.txt
+
+                if [[ "$v_res" == DATA\|* ]]; then
+                    IFS='|' read -r _ t_alias t_uuid t_path <<< "$v_res"
+                    local my_ip=$(curl -s -m 4 https://api.ipify.org || curl -s -m 4 ifconfig.me || echo "IP_DEL_VPS")
+                    local enc_path=$(echo -n "$t_path" | jq -sRr @uri 2>/dev/null || echo "%2F")
+                    local link="vless://${t_uuid}@${my_ip}:80?path=${enc_path}&security=none&encryption=none&type=httpupgrade#${t_alias}"
+                    echo -e "\n${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e "  • Alias:        ${green}$t_alias${plain}"
+                    echo -e "  • UUID:         ${yellow}$t_uuid${plain}"
+                    echo -e "  • Servidor IP:  ${white}$my_ip${plain}"
+                    echo -e "  • Puerto:       ${green}80${plain}"
+                    echo -e "  • Path:         ${white}$t_path${plain}"
+                    echo -e "  • Protocolo:    ${green}VLESS (HTTPUpgrade)${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                    echo -e "  🔗 Link VLESS:  ${cyan}$link${plain}"
+                    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+                elif [ "$v_res" = "INVALID_INDEX" ]; then
+                    echo -e "\n${red}❌ Número de usuario inválido.${plain}"
+                else
+                    echo -e "\n${red}❌ Error: $v_res${plain}"
+                fi
+                pause
+                ;;
+
+            4)
+                echo -e "\n${yellow}[*] Reiniciando servicio Xray...${plain}"
+                systemctl restart xray
+                sleep 1
+                if systemctl is-active --quiet xray; then
+                    echo -e "${green}✔ Xray reiniciado correctamente.${plain}"
+                else
+                    echo -e "${red}❌ Error reiniciando Xray.${plain}"
+                fi
+                pause
+                ;;
+
+            0) break ;;
+            *) echo -e "${red}Opción inválida${plain}"; sleep 1 ;;
+        esac
+    done
+}
+
 gestionar_xray_vless() {
     while true; do
         clear
@@ -107,8 +337,8 @@ gestionar_xray_vless() {
 
         echo -e " ${green}[1]${plain} > ⚡ Instalar / Reconfigurar Servidor Xray VLESS (Puerto 80)"
         if [ "$xray_active" -eq 1 ]; then
-            echo -e " ${green}[2]${plain} > 📋 Ver Parámetros de Conexión y VLESS Link (Para la App)"
-            echo -e " ${green}[3]${plain} > 🔑 Gestionar / Actualizar Cliente UUID"
+            echo -e " ${green}[2]${plain} > 👥 Administrar Usuarios VLESS (Crear, Listar, Eliminar)"
+            echo -e " ${green}[3]${plain} > 📋 Ver Parámetros de Conexión y VLESS Link (Para la App)"
             echo -e " ${green}[4]${plain} > 🔄 Reiniciar Servicio Xray"
             echo -e " ${red}[5]${plain} > 🛑 Detener Xray y Liberar Puerto 80"
         fi
@@ -293,6 +523,10 @@ EOF
                 ;;
 
             2)
+                menu_usuarios_xray
+                ;;
+
+            3)
                 clear
                 echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
                 echo -e " 📋 ${yellow}DATOS DE CONEXIÓN XRAY VLESS (PUERTO 80)${plain}"
@@ -313,23 +547,6 @@ EOF
                     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
                 else
                     echo -e "${yellow}No se encontró configuración activa de Xray en /usr/local/etc/xray/config.json${plain}"
-                fi
-                pause
-                ;;
-
-            3)
-                clear
-                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-                echo -e " 🔑 ${yellow}GESTIÓN DE CLIENTES UUID${plain}"
-                echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-                local new_uuid=$(uuidgen 2>/dev/null || /usr/local/bin/xray uuid 2>/dev/null)
-                echo -e " Nuevo UUID sugerido: ${green}$new_uuid${plain}\n"
-                read -p "$(echo -e ${white}"Escribe nuevo UUID (o Enter para aplicar el sugerido): "${plain})" input_u
-                local apply_uuid="${input_u:-$new_uuid}"
-                if [ -n "$apply_uuid" ] && [ -f "/usr/local/etc/xray/config.json" ]; then
-                    sed -i -E "s/\"id\":\s*\"[^\"]+\"/\"id\": \"$apply_uuid\"/g" /usr/local/etc/xray/config.json
-                    systemctl restart xray
-                    echo -e "${green}✔ UUID actualizado a: $apply_uuid y servicio reiniciado.${plain}"
                 fi
                 pause
                 ;;
