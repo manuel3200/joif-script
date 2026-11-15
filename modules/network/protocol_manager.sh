@@ -415,13 +415,14 @@ gestionar_xray_vless() {
                 local final_path="${custom_path:-/}"
 
                 # 5. Escribir configuración
+                rm -rf /etc/systemd/system/xray.service.d 2>/dev/null || true
                 mkdir -p /usr/local/etc/xray /var/log/xray
+                chmod -R 777 /var/log/xray 2>/dev/null || true
+                chown -R nobody:nogroup /var/log/xray 2>/dev/null || true
                 cat << EOF > /usr/local/etc/xray/config.json
 {
   "log": {
-    "loglevel": "warning",
-    "access": "/var/log/xray/access.log",
-    "error": "/var/log/xray/error.log"
+    "loglevel": "warning"
   },
   "inbounds": [
     {
