@@ -428,21 +428,21 @@ gestionar_xray_vless() {
   "inbounds": [
     {
       "port": 80,
-      "protocol": "vmess",
+      "protocol": "vless",
       "settings": {
         "clients": [
           {
             "id": "$final_uuid",
-            "alterId": 0,
-            "email": "user@joif.vpn",
-            "level": 0
+            "level": 0,
+            "email": "user@joif.vpn"
           }
-        ]
+        ],
+        "decryption": "mlkem768x25519plus.native.600s.AIk1Zqv0lv2zg2YNrB73zO31-zxipmzyPFcfwxz9kUA"
       },
       "streamSettings": {
-        "network": "ws",
+        "network": "httpupgrade",
         "security": "none",
-        "wsSettings": {
+        "httpupgradeSettings": {
           "path": "$final_path"
         }
       },
