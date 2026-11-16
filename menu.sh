@@ -38,27 +38,14 @@ menu_crear_usuario() {
     echo -e " ${green}[02]${plain}  > SSH|DROPBEAR "
     echo -e " ${green}[03]${plain}  > HWID         "
     echo -e " ${green}[04]${plain}  > TOKEN "
-    echo -e " ${green}[05]${plain}  > XRAY VLESS (UUID / Dispositivo Móvil) ⚡"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${green}[06]${plain}  > MODIFICAR CONTRASEÑA TOKEN "
+    echo -e " ${green}[05]${plain}  > MODIFICAR CONTRASEÑA TOKEN "
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ${red}[00]${plain}  ⇦ [ VOLVER ]"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     read -p "$(echo -e ${white}" ► Opcion : "${plain})" opt_crear
     
     if [ "$opt_crear" = "0" ] || [ "$opt_crear" = "00" ]; then
-        return
-    fi
-
-    # CREADOR / GESTOR DE USUARIOS XRAY VLESS (UUID)
-    if [ "$opt_crear" = "5" ] || [ "$opt_crear" = "05" ]; then
-        if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
-            source /root/joif-core/modules/network/protocol_manager.sh
-            menu_usuarios_xray
-        elif [ -f "./modules/network/protocol_manager.sh" ]; then
-            source ./modules/network/protocol_manager.sh
-            menu_usuarios_xray
-        fi
         return
     fi
 
@@ -379,7 +366,6 @@ menu_usuarios() {
         
         echo -e " ${green}[13]${plain} ➮ 🚀 ACTIVAR / REINSTALAR API CheckUser ( ${checkuser_status} )"
         echo -e " ${green}[14]${plain} ➮ 🔒 CONTROL DE ADMINISTRACION MULTILOGINS ( $ ) "
-        echo -e " ${green}[15]${plain} ➮ ⚡ ADMINISTRAR USUARIOS XRAY VLESS (UUID) 📱"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e "  ${red}[0]${plain} ➮ [ REGRESAR ]"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -1008,15 +994,6 @@ EOF
             13|013)
                 instalar_api_checkuser
                 ;;
-            15|015)
-                if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
-                    source /root/joif-core/modules/network/protocol_manager.sh
-                    menu_usuarios_xray
-                elif [ -f "./modules/network/protocol_manager.sh" ]; then
-                    source ./modules/network/protocol_manager.sh
-                    menu_usuarios_xray
-                fi
-                ;;
             0|00) break ;;
             *) echo -e "${red}Opción en construcción o inválida${plain}"; sleep 1 ;;
         esac
@@ -1034,7 +1011,7 @@ menu_herramientas() {
         echo -e " ${green}[4]${plain} > 💾 Memoria Virtual SWAP (Crear / Optimizar)"
         echo -e " ${green}[5]${plain} > 📦 Backup y Restauración de Cuentas"
         echo -e " ${green}[6]${plain} > ⚡ Autoconfigurar VPS para Portal Web (Auto-Link)"
-        echo -e " ${green}[7]${plain} > ⚡ Gestor Xray VLESS HTTPUpgrade (Puerto 80)"
+        echo -e " ${green}[7]${plain} > ⚡ Optimización de Red TCP BBR y Búferes del Kernel (Baja Latencia / Gaming)"
         echo -e " ${red}[0]${plain} > 🔙 Volver al menú principal"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         read -p "$(echo -e ${white}"Selecciona una opción: "${plain})" opt_tools
@@ -1075,10 +1052,10 @@ menu_herramientas() {
                 autoconfigurar_portal_web
                 ;;
             7)
-                if [ -f "/root/joif-core/modules/network/protocol_manager.sh" ]; then
-                    bash -c "source /root/joif-core/core/utils.sh 2>/dev/null; source /root/joif-core/modules/network/protocol_manager.sh; gestionar_xray_vless"
-                elif [ -f "$SCRIPT_DIR/modules/network/protocol_manager.sh" ]; then
-                    bash -c "source $SCRIPT_DIR/core/utils.sh 2>/dev/null; source $SCRIPT_DIR/modules/network/protocol_manager.sh; gestionar_xray_vless"
+                if [ -f "/root/joif-core/modules/system/network_tuning.sh" ]; then
+                    bash /root/joif-core/modules/system/network_tuning.sh
+                elif [ -f "$SCRIPT_DIR/modules/system/network_tuning.sh" ]; then
+                    bash "$SCRIPT_DIR/modules/system/network_tuning.sh"
                 fi
                 ;;
             0|00)
@@ -1496,7 +1473,7 @@ while true; do
     echo -e " ${green}[02]${plain} ➮ 🛠️  HERRAMIENTAS DEL SISTEMA "
     echo -e " ${green}[03]${plain} ➮ 👁️  MONITOR DE USUARIOS EN LÍNEA  [ ${green}${online_count}${plain} ]"
     echo -e " ${green}[04]${plain} ➮ ⚡ AUTOINICIAR SCRIPT AL ENTRAR   ${autostart_badge}"
-    echo -e " ${green}[05]${plain} ➮ 📡 INSTALADOR DE PROTOCOLOS (WS, BadVPN, SSL, Xray)"
+    echo -e " ${green}[05]${plain} ➮ 📡 INSTALADOR DE PROTOCOLOS (WS, BadVPN, SSL)"
     echo -e " ${green}[06]${plain} ➮ ⚡ VINCULAR CON TIENDA WEB (Auto-Link)"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e " ${green}[07]${plain} ➮ 🔄 GESTIÓN / ACTUALIZAR SCRIPT  |  ${red}[0]${plain} ⇦ [ SALIR ]"

@@ -591,7 +591,7 @@ while true; do
     echo -e " ${green}[2]${plain} > 🎮 BadVPN UDP-GW (Puertos 7300 y 7200 - Juegos y Llamadas)"
     echo -e " ${green}[3]${plain} > 🔒 SSL / TLS Stunnel (Puerto 443 -> WS 80 o SSH 22)"
     echo -e " ${green}[4]${plain} > 📊 Estado de Protocolos en Vivo"
-    echo -e " ${green}[5]${plain} > ⚡ Xray VLESS HTTPUpgrade (Puerto 80 - Anti-DPI)"
+    echo -e " ${green}[5]${plain} > ⚡ Optimización de Red TCP BBR y Búferes del Kernel"
     echo -e " ${green}[30]${plain}> 🛠  Herramientas Extras"
     echo -e " ${red}[0]${plain} > 🔙 Volver al menú principal"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
@@ -960,18 +960,22 @@ EOF
                 echo -e "${red}[INACTIVO]${plain}"
             fi
 
-            printf "  • %-28s " "Xray VLESS (Puerto 80)"
-            if systemctl is-active --quiet xray; then
-                echo -e "${green}[ACTIVO - ONLINE]${plain}"
+            printf "  • %-28s " "TCP BBR (Aceleración)"
+            if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
+                echo -e "${green}[ACTIVO - BBR]${plain}"
             else
-                echo -e "${red}[INACTIVO]${plain}"
+                echo -e "${yellow}[ESTÁNDAR]${plain}"
             fi
 
             pause
             ;;
 
         5)
-            gestionar_xray_vless
+            if [ -f "/root/joif-core/modules/system/network_tuning.sh" ]; then
+                bash /root/joif-core/modules/system/network_tuning.sh
+            elif [ -f "$(dirname "${BASH_SOURCE[0]}")/../system/network_tuning.sh" ]; then
+                bash "$(dirname "${BASH_SOURCE[0]}")/../system/network_tuning.sh"
+            fi
             ;;
 
         30)

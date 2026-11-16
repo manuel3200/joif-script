@@ -35,9 +35,17 @@ if [ "$SUCCESS" = "1" ]; then
     rm -f /usr/local/bin/menu /bin/menu
     ln -sf /root/joif-core/menu.sh /usr/bin/menu
     ln -sf /root/joif-core/update.sh /usr/bin/joif-update
+    ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/joif-bbr
+    ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/bbr
     
     hash -r
     
+    # Detener y deshabilitar Xray en caso de que estuviese activo
+    if systemctl is-active --quiet xray 2>/dev/null; then
+        systemctl stop xray 2>/dev/null || true
+        systemctl disable xray 2>/dev/null || true
+    fi
+
     echo -e " \033[1;33m[*] Reiniciando panel web y servicios...\033[0m"
     systemctl restart joif 2>/dev/null || true
     systemctl is-active --quiet joif-proxy && systemctl restart joif-proxy 2>/dev/null || true
