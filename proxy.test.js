@@ -173,18 +173,31 @@ test('proxy validates HWID against DB: accepts active and rejects invalid/expire
     mockSsh.close();
   });
 
-  // 1. Valid HWID
+  // 1. Valid HWID (WebSocket payload -> 101)
   const clientValid = net.createConnection({ port: proxyPort, host: '127.0.0.1' });
   let validBuf = '';
   await new Promise((res) => clientValid.on('connect', res));
   clientValid.on('data', (d) => { validBuf += d.toString(); });
-  clientValid.write('GET / HTTP/1.1\r\nHost: bug.com\r\nX-HWID: VALID_HWID\r\n\r\n');
+  clientValid.write('GET / HTTP/1.1\r\nHost: bug.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-HWID: VALID_HWID\r\n\r\n');
   await new Promise((res) => {
     const check = () => { if (validBuf.includes('101 Switching Protocols')) res(); else setTimeout(check, 10); };
     check();
   });
   assert.ok(validBuf.includes('HTTP/1.1 101 Switching Protocols'));
   clientValid.destroy();
+
+  // 1b. Valid HWID (Standard HTTP payload -> 200 Connection Established)
+  const clientValid200 = net.createConnection({ port: proxyPort, host: '127.0.0.1' });
+  let validBuf200 = '';
+  await new Promise((res) => clientValid200.on('connect', res));
+  clientValid200.on('data', (d) => { validBuf200 += d.toString(); });
+  clientValid200.write('CONNECT bug.com:80 HTTP/1.1\r\nHost: bug.com\r\nX-HWID: VALID_HWID\r\n\r\n');
+  await new Promise((res) => {
+    const check = () => { if (validBuf200.includes('200 Connection Established')) res(); else setTimeout(check, 10); };
+    check();
+  });
+  assert.ok(validBuf200.includes('HTTP/1.1 200 Connection Established'));
+  clientValid200.destroy();
 
   // 2. Unknown HWID -> 403
   const clientUnknown = net.createConnection({ port: proxyPort, host: '127.0.0.1' });

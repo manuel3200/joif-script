@@ -80,11 +80,22 @@ Compression no
 # Desactivar resolución inversa de DNS (conexión instantánea sin esperas)
 UseDNS no
 
-# Permitir ráfagas de conexiones concurrentes para pools de Zeptun
+# Permitir ráfagas de conexiones concurrentes para pools y múltiples usuarios
 MaxStartups 100:30:200
 
-# Cifrados de alto rendimiento con aceleración por hardware en procesadores ARM y x86
-Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com
+# Cifrados universales: modernos y ultra-rápidos primero (ChaCha20, GCM) + universales (CTR, CBC)
+# para compatibilidad total con HTTP Custom, HTTP Injector, SocksHTTP y clientes Java/Android
+Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,aes192-cbc,aes256-cbc
+
+# Intercambio de claves (KEX) compatible con clientes antiguos y modernos
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1
+
+# Algoritmos MAC compatibles
+MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1,hmac-md5
+
+# Claves de host compatibles
+HostKeyAlgorithms +ssh-rsa,ssh-dss,ecdsa-sha2-nistp256,ssh-ed25519
+PubkeyAcceptedKeyTypes +ssh-rsa,ssh-dss,ecdsa-sha2-nistp256,ssh-ed25519
 EOF
 
 systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true

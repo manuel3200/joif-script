@@ -14,6 +14,10 @@ const RESPONSE_101 = Buffer.from(
   'Connection: Upgrade\r\n\r\n'
 );
 
+const RESPONSE_200 = Buffer.from(
+  'HTTP/1.1 200 Connection Established\r\n\r\n'
+);
+
 function parseTarget(headerValue, defaultPort) {
   if (!headerValue || typeof headerValue !== 'string') return defaultPort;
   const cleaned = headerValue.trim();
@@ -155,8 +159,9 @@ function createProxyServer(options = {}) {
         sshSocket.setNoDelay(true);
         sshSocket.setKeepAlive(true, 15000);
 
-        // Responder con HTTP 101 estándar limpio
-        clientSocket.write(RESPONSE_101);
+        // Responder con HTTP 101 si es WebSocket o HTTP 200 Connection Established si es HTTP Proxy estándar
+        const isWs = /upgrade\s*:\s*websocket/i.test(headerText) || /connection\s*:\s*upgrade/i.test(headerText);
+        clientSocket.write(isWs ? RESPONSE_101 : RESPONSE_200);
 
         // Si llegaron bytes pipelined (SSH greeting inicial junto al payload), enviarlos de inmediato
         if (remainingBytes.length > 0) {
