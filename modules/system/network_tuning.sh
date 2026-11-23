@@ -68,7 +68,42 @@ echo -e " ${green}✔ Módulo TCP BBR, búferes y colas FQ aplicados con éxito.
 
 echo -e "\n ${yellow}[*] Paso 3: Optimizando servidor OpenSSH para baja latencia...${plain}"
 mkdir -p /etc/ssh/sshd_config.d
-cat << 'EOF' > /etc/ssh/sshd_config.d/99-vpn-speed.conf
+SSH_CONF="/etc/ssh/sshd_config.d/99-vpn-speed.conf"
+SSH_BACKUP=""
+
+if [ -f "$SSH_CONF" ]; then
+    SSH_BACKUP="${SSH_CONF}.bak.$(date +%s)"
+    cp -a "$SSH_CONF" "$SSH_BACKUP"
+fi
+
+# Filtra una lista separada por comas dejando solo los algoritmos soportados por el OpenSSH instalado
+filter_ssh_algos() {
+    local query_type="$1"
+    local desired="$2"
+    local supported
+    supported=$(ssh -Q "$query_type" 2>/dev/null || true)
+    if [ -z "$supported" ]; then
+        echo ""
+        return
+    fi
+    local result=""
+    local algo
+    IFS=',' read -ra list <<< "$desired"
+    for algo in "${list[@]}"; do
+        if grep -qxF "$algo" <<< "$supported"; then
+            result="${result:+${result},}${algo}"
+        fi
+    done
+    echo "$result"
+}
+
+CIPHERS_LIST=$(filter_ssh_algos cipher "chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,aes192-cbc,aes256-cbc")
+KEX_LIST=$(filter_ssh_algos kex "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1")
+MACS_LIST=$(filter_ssh_algos mac "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1,hmac-md5")
+KEYS_LIST=$(filter_ssh_algos key "ssh-rsa,ecdsa-sha2-nistp256,ssh-ed25519")
+
+{
+    cat << 'EOF'
 # Keepalive para evitar cortes de antena 4G / NAT de la operadora
 ClientAliveInterval 15
 ClientAliveCountMax 4
@@ -82,24 +117,38 @@ UseDNS no
 
 # Permitir ráfagas de conexiones concurrentes para pools y múltiples usuarios
 MaxStartups 100:30:200
-
-# Cifrados universales: modernos y ultra-rápidos primero (ChaCha20, GCM) + universales (CTR, CBC)
-# para compatibilidad total con HTTP Custom, HTTP Injector, SocksHTTP y clientes Java/Android
-Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,aes192-cbc,aes256-cbc
-
-# Intercambio de claves (KEX) compatible con clientes antiguos y modernos
-KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1
-
-# Algoritmos MAC compatibles
-MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1,hmac-md5
-
-# Claves de host compatibles
-HostKeyAlgorithms +ssh-rsa,ssh-dss,ecdsa-sha2-nistp256,ssh-ed25519
-PubkeyAcceptedKeyTypes +ssh-rsa,ssh-dss,ecdsa-sha2-nistp256,ssh-ed25519
 EOF
+    [ -n "$CIPHERS_LIST" ] && echo "Ciphers ${CIPHERS_LIST}"
+    [ -n "$KEX_LIST" ] && echo "KexAlgorithms ${KEX_LIST}"
+    [ -n "$MACS_LIST" ] && echo "MACs ${MACS_LIST}"
+    if [ -n "$KEYS_LIST" ]; then
+        echo "HostKeyAlgorithms +${KEYS_LIST}"
+        echo "PubkeyAcceptedAlgorithms +${KEYS_LIST}"
+    fi
+} > "$SSH_CONF"
 
-systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-echo -e " ${green}✔ OpenSSH configurado con KeepAlive, sin compresión y cifrados ultra-rápidos.${plain}"
+# Asegurar directorio de separación de privilegios antes de validar con sshd -t
+mkdir -p /run/sshd
+chmod 0755 /run/sshd
+
+if sshd -t 2>/dev/null; then
+    [ -n "$SSH_BACKUP" ] && rm -f "$SSH_BACKUP"
+    if systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null; then
+        echo -e " ${green}✔ OpenSSH validado (sshd -t) y recargado con éxito.${plain}"
+    elif systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null; then
+        echo -e " ${green}✔ OpenSSH validado (sshd -t) y reiniciado con éxito.${plain}"
+    else
+        echo -e " ${yellow}⚠ OpenSSH validado (sshd -t), pero no se pudo recargar/reiniciar el servicio automáticamente.${plain}"
+    fi
+else
+    echo -e " ${red}✖ Error: sshd -t falló. Revirtiendo cambios para proteger el acceso SSH...${plain}"
+    if [ -n "$SSH_BACKUP" ] && [ -f "$SSH_BACKUP" ]; then
+        mv -f "$SSH_BACKUP" "$SSH_CONF"
+    else
+        rm -f "$SSH_CONF"
+    fi
+    echo -e " ${yellow}⚠ Se realizó rollback de ${SSH_CONF}. El servicio SSH no fue reiniciado.${plain}"
+fi
 
 echo -e "\n ${yellow}[*] Paso 4: Optimizando BadVPN UDP-GW (Puertos 7300 y 7200)...${plain}"
 BADVPN_BIN="/usr/local/bin/badvpn-udpgw"
