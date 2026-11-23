@@ -66,8 +66,20 @@ function run(file, args, input = '') {
 function sessions(output, username) {
   linuxName(username); let count = 0, elapsed = 0;
   for (const line of output.split('\n')) {
-    const match = line.trim().match(/^(\d+)\s+sshd(?:-session)?:\s+([^\s@]+)@/);
-    if (match && match[2] === username) { count++; elapsed = Math.max(elapsed, Number(match[1])); }
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Formato 1: ps -eo user:32,etimes,args (detecta sshd, sshd-session con o sin @notty, y dropbear)
+    const ownerMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s+(\d+)\s+(.+)$/);
+    if (ownerMatch) {
+      const owner = ownerMatch[1], secs = Number(ownerMatch[2]), args = ownerMatch[3];
+      if (owner === username && /\b(sshd(?:-session)?|dropbear)\b/i.test(args) && !/\[(priv|net|accepted)\]|listener/i.test(args)) {
+        count++; elapsed = Math.max(elapsed, secs);
+      }
+      continue;
+    }
+    // Formato 2 (legacy): ps -eo etimes,args
+    const legacyMatch = trimmed.match(/^(\d+)\s+sshd(?:-session)?:\s+([^\s@]+)(?:@|$)/);
+    if (legacyMatch && legacyMatch[2] === username) { count++; elapsed = Math.max(elapsed, Number(legacyMatch[1])); }
   }
   const h = Math.floor(elapsed / 3600), m = Math.floor(elapsed % 3600 / 60), s = elapsed % 60;
   return { count, time: `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` };

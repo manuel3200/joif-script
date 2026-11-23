@@ -240,7 +240,7 @@ async function handleCheckUser(id, res) {
     let timeOnline = "00:00:00";
     if (process.platform === 'linux') {
       try {
-        const current = security.sessions(await security.run('ps', ['-eo', 'etimes,args']), linuxUser);
+        const current = security.sessions(await security.run('ps', ['-eo', 'user:32,etimes,args']), linuxUser);
         activeConnections = current.count; timeOnline = current.time;
       } catch (_) { console.error('[CheckUser] No se pudieron consultar las conexiones.'); }
     }

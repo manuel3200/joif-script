@@ -278,12 +278,8 @@ menu_mostrar_conectados() {
         if [[ -z "${max_time[$linuxUser]}" ]] || (( etimes > max_time[$linuxUser] )); then
             max_time["$linuxUser"]=$etimes
         fi
-    done < <(ps -eo etimes,command 2>/dev/null | awk '/sshd:|dropbear/ && !/root/ && !/grep/ && !/\[priv\]/ && !/listener/ {
-        user = $3
-        sub(/@.*/, "", user)
-        if (user != "") {
-            print user, $1
-        }
+    done < <(ps -eo user:32,etimes,args 2>/dev/null | awk '$1 != "root" && $1 != "USER" && ($0 ~ /sshd|dropbear/) && $0 !~ /\[(priv|net|accepted)\]|listener|awk/ {
+        print $1, $2
     }')
 
     sec2time() {

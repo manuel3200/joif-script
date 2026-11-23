@@ -19,7 +19,8 @@ test('password hashes and session keys are persistent without fixed secrets', t 
   const dir = fixture(t); assert.equal(security.sessionSecret(dir, {}), security.sessionSecret(dir, {}));
   assert.throws(() => security.sessionSecret(dir, { SESSION_SECRET: 'default_secret_key' }));
 });
-test('session accounting matches exact SSH user across OpenSSH legacy and sshd-session formats', () => {
+test('session accounting matches exact SSH user across OpenSSH legacy, sshd-session without @, and user-owner formats', () => {
   assert.deepEqual(security.sessions('120 sshd: testuser@notty\n999 sshd: another@pts/0\n123 sshd: testuser [priv]', 'testuser'), { count: 1, time: '0:02:00' });
-  assert.deepEqual(security.sessions('185 sshd-session: testuser@notty\n999 sshd-session: another@pts/0\n60 sshd-session: testuser@pts/1', 'testuser'), { count: 2, time: '0:03:05' });
+  assert.deepEqual(security.sessions('185 sshd-session: testuser@notty\n999 sshd-session: another@pts/0\n60 sshd-session: testuser', 'testuser'), { count: 2, time: '0:03:05' });
+  assert.deepEqual(security.sessions('USER ELAPSED COMMAND\nroot 185 sshd-session: joif01 [priv]\njoif01 185 sshd-session: joif01\njoif01 40 sshd-session: joif01@notty\njoif01 15 /usr/sbin/dropbear -p 143', 'joif01'), { count: 3, time: '0:03:05' });
 });

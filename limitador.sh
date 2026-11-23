@@ -15,15 +15,11 @@ while true; do
     unset conn_count
     declare -A conn_count
     
-    # 1. Contar conexiones activas (Ignorando zombies si el keepalive hizo su trabajo)
+    # 1. Contar conexiones activas (Compatible con sshd, sshd-session de Ubuntu 26.04 y dropbear)
     while read -r linuxUser etimes; do
         conn_count["$linuxUser"]=$((conn_count["$linuxUser"] + 1))
-    done < <(ps -eo etimes,command | awk '/sshd:|dropbear/ && !/root/ && !/grep/ && !/\\[priv\\]/ && !/listener/ {
-        user = $3
-        sub(/@.*/, "", user)
-        if (user != "") {
-            print user, $1
-        }
+    done < <(ps -eo user:32,etimes,args | awk '$1 != "root" && $1 != "USER" && ($0 ~ /sshd|dropbear/) && $0 !~ /\[(priv|net|accepted)\]|listener|awk/ {
+        print $1, $2
     }')
     
     # 2. Verificar contra la base de datos (Bulk Fetch para evitar O(n) overhead)
