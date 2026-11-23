@@ -20,7 +20,11 @@ test('real SQLite backend creates, checks and revokes a test account without acc
   const login=await post('/api/auth/login',{username:'admin',password});assert.equal(login.status,200);const {token}=await login.json();
   assert.equal((await post('/api/users',{username:'stage2test',password:'temporary-account-123',expiration_date:'2099-01-01',max_connections:1},token)).status,201);
   assert.equal((await fetch(base+'/health')).status,200);
-  assert.equal((await fetch(base+'/check/stage2test')).status,200);
+  const checkRes = await fetch(base+'/check/stage2test');
+  assert.equal(checkRes.status,200);
+  const checkBody = await checkRes.json();
+  assert.equal(checkBody.bytes_used, 0);
+  assert.equal(checkBody.gb_used, '0.00 MB');
   assert.equal((await fetch(base+'/checkUser?user=stage2test')).status,200);
   assert.equal((await post('/checkUser',{user:'stage2test'})).status,200);
   assert.ok((await (await fetch(base+'/check')).json()).includes('stage2test'));

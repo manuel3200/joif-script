@@ -24,3 +24,21 @@ test('session accounting matches exact SSH user across OpenSSH legacy, sshd-sess
   assert.deepEqual(security.sessions('185 sshd-session: testuser@notty\n999 sshd-session: another@pts/0\n60 sshd-session: testuser', 'testuser'), { count: 2, time: '0:03:05' });
   assert.deepEqual(security.sessions('USER ELAPSED COMMAND\nroot 185 sshd-session: joif01 [priv]\njoif01 185 sshd-session: joif01\njoif01 40 sshd-session: joif01@notty\njoif01 15 /usr/sbin/dropbear -p 143', 'joif01'), { count: 3, time: '0:03:05' });
 });
+test('traffic collector parses /proc/pid/io deltas accurately and formats MB/GB', async () => {
+  assert.equal(security.formatTrafficBytes(0), '0.00 MB');
+  assert.equal(security.formatTrafficBytes(50 * 1024 * 1024), '50.00 MB');
+  assert.equal(security.formatTrafficBytes(1.5 * 1024 * 1024 * 1024), '1.50 GB');
+  assert.equal(security.parseProcIoBytes('rchar: 2048\nwchar: 4096\n'), 3072);
+  let ioTick = 1;
+  const collector = security.createTrafficCollector({
+    listSessions: async () => security.sessionPids('USER PID ELAPSED COMMAND\nroot 100 50 sshd-session: joif01 [priv]\njoif01 101 50 sshd-session: joif01\njoif01 102 20 sshd-session: joif01@notty'),
+    readProcIo: pid => pid === 101 ? `rchar: ${ioTick * 2000}\nwchar: ${ioTick * 2000}\n` : `rchar: ${ioTick * 1000}\nwchar: ${ioTick * 1000}\n`
+  });
+  const writes = [];
+  const mockDb = { async query(sql, params) { writes.push({ sql, params }); } };
+  await collector.flushToDb(mockDb);
+  assert.deepEqual(writes[0].params, [3000, 'joif01']);
+  ioTick = 3;
+  await collector.flushToDb(mockDb);
+  assert.deepEqual(writes[1].params, [6000, 'joif01']);
+});

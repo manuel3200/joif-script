@@ -102,7 +102,7 @@ app.post('/api/users/:username/config', authMiddleware, async (req, res) => {
 // Obtener todos los usuarios
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query('SELECT id, username, expiration_date, hwid, alias, max_connections, status, created_at FROM users');
+    const result = await db.query('SELECT id, username, expiration_date, hwid, alias, max_connections, COALESCE(bytes_used, 0) AS bytes_used, status, created_at FROM users');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -209,14 +209,21 @@ app.get(['/check', '/api/check'], async (req, res) => {
   }
 });
 
+const trafficCollector = (process.platform === 'linux' && typeof security.createTrafficCollector === 'function')
+  ? security.createTrafficCollector()
+  : null;
+
 async function handleCheckUser(id, res) {
   if (typeof id !== 'string' || !id.trim()) {
     return res.status(400).json({ error: 'Usuario requerido' });
   }
   const target = id.trim();
   try {
+    if (trafficCollector) {
+      try { await trafficCollector.flushToDb(db); } catch (_) {}
+    }
     const userRes = await db.query(
-      'SELECT username, hwid, alias, expiration_date, max_connections, status FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1',
+      'SELECT username, hwid, alias, expiration_date, max_connections, status, COALESCE(bytes_used, 0) AS bytes_used FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1',
       [target, target, target]
     );
     if (userRes.rowCount === 0) {
@@ -248,6 +255,10 @@ async function handleCheckUser(id, res) {
     const expDateStr = user.expiration_date.split('T')[0];
     const [year, month, day] = expDateStr.split('-');
     const formattedDate = `${day}/${month}/${year}`;
+    const bytesUsed = Number(user.bytes_used) > 0 ? Number(user.bytes_used) : 0;
+    const formattedUsage = typeof security.formatTrafficBytes === 'function'
+      ? security.formatTrafficBytes(bytesUsed)
+      : '0.00 MB';
 
     res.json({
       count_connections: activeConnections,
@@ -256,7 +267,10 @@ async function handleCheckUser(id, res) {
       limit_connections: user.max_connections,
       time_online: timeOnline,
       username: user.username,
-      uuid: user.hwid || null
+      uuid: user.hwid || null,
+      bytes_used: bytesUsed,
+      gb_used: formattedUsage,
+      data_used: formattedUsage
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -316,6 +330,13 @@ function startUdpgw() {
 
 // BadVPN UDPGW es gestionado de forma modular e independiente por systemd (badvpn-dual.service)
 require('./account-reconciler').startReconciler(db);
+
+if (trafficCollector && typeof setInterval === 'function') {
+  const trafficTimer = setInterval(() => {
+    trafficCollector.flushToDb(db).catch(() => {});
+  }, 15000);
+  if (typeof trafficTimer.unref === 'function') trafficTimer.unref();
+}
 
 const PORT = process.env.PORT || 3000;
 (db.ready || Promise.resolve()).then(() => app.listen(PORT, () => {

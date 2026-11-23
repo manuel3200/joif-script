@@ -84,4 +84,75 @@ function sessions(output, username) {
   const h = Math.floor(elapsed / 3600), m = Math.floor(elapsed % 3600 / 60), s = elapsed % 60;
   return { count, time: `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` };
 }
-module.exports = { linuxName, validateAccount, hashPassword, verifyPassword, sessionSecret, run, sessions };
+function formatTrafficBytes(bytes) {
+  const safe = Number.isFinite(Number(bytes)) && Number(bytes) > 0 ? Number(bytes) : 0;
+  const gb = 1024 * 1024 * 1024;
+  const mb = 1024 * 1024;
+  if (safe >= gb) return `${(safe / gb).toFixed(2)} GB`;
+  return `${(safe / mb).toFixed(2)} MB`;
+}
+function parseProcIoBytes(ioContent) {
+  if (typeof ioContent !== 'string' || !ioContent) return 0;
+  const rMatch = ioContent.match(/^rchar:\s*(\d+)/m);
+  const wMatch = ioContent.match(/^wchar:\s*(\d+)/m);
+  const rchar = rMatch ? Number(rMatch[1]) : 0;
+  const wchar = wMatch ? Number(wMatch[1]) : 0;
+  if (!Number.isFinite(rchar) || !Number.isFinite(wchar)) return 0;
+  // sshd-session / dropbear lee del socket entrante y escribe al saliente (2x); dividir por 2 da el tráfico real RX+TX
+  return Math.floor((rchar + wchar) / 2);
+}
+function sessionPids(psOutput) {
+  const list = [];
+  if (typeof psOutput !== 'string' || !psOutput) return list;
+  for (const line of psOutput.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^([A-Za-z0-9_.-]+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+    if (!match) continue;
+    const owner = match[1], pid = Number(match[2]), etimes = Number(match[3]), args = match[4];
+    if (owner === 'root' || owner === 'USER' || reserved.has(owner.toLowerCase())) continue;
+    if (/\b(sshd(?:-session)?|dropbear)\b/i.test(args) && !/\[(priv|net|accepted)\]|listener/i.test(args)) {
+      list.push({ user: owner, pid, etimes });
+    }
+  }
+  return list;
+}
+function createTrafficCollector(options = {}) {
+  const lastByPid = new Map();
+  const listFn = options.listSessions || (async () => sessionPids(await run('ps', ['-eo', 'user:32,pid,etimes,args'])));
+  const readIoFn = options.readProcIo || (pid => {
+    try { return fs.readFileSync(`/proc/${pid}/io`, 'utf8'); } catch (_) { return ''; }
+  });
+  async function sampleDeltas() {
+    const active = await listFn();
+    const seenPids = new Set();
+    const deltas = new Map();
+    for (const item of active) {
+      seenPids.add(item.pid);
+      const current = parseProcIoBytes(readIoFn(item.pid));
+      const prev = lastByPid.get(item.pid) || 0;
+      if (current > prev) {
+        deltas.set(item.user, (deltas.get(item.user) || 0) + (current - prev));
+      }
+      lastByPid.set(item.pid, current);
+    }
+    for (const pid of lastByPid.keys()) {
+      if (!seenPids.has(pid)) lastByPid.delete(pid);
+    }
+    return deltas;
+  }
+  async function flushToDb(database) {
+    if (!database || typeof database.query !== 'function') return 0;
+    const deltas = await sampleDeltas();
+    let updated = 0;
+    for (const [uname, deltaBytes] of deltas.entries()) {
+      if (deltaBytes > 0) {
+        await database.query('UPDATE users SET bytes_used = COALESCE(bytes_used, 0) + ? WHERE username = ? COLLATE NOCASE', [deltaBytes, uname]);
+        updated++;
+      }
+    }
+    return updated;
+  }
+  return { sampleDeltas, flushToDb };
+}
+module.exports = { linuxName, validateAccount, hashPassword, verifyPassword, sessionSecret, run, sessions, formatTrafficBytes, parseProcIoBytes, sessionPids, createTrafficCollector };

@@ -13,6 +13,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
     db.run('ALTER TABLE users ADD COLUMN alias TEXT;', () => {});
+    db.run('ALTER TABLE users ADD COLUMN bytes_used INTEGER DEFAULT 0;', () => {});
   }
 });
 
@@ -49,6 +50,7 @@ const initDB = async () => {
           alias TEXT,
           expiration_date TEXT NOT NULL,
           max_connections INTEGER DEFAULT 1,
+          bytes_used INTEGER DEFAULT 0,
           status TEXT DEFAULT 'active',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
