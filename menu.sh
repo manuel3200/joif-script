@@ -359,9 +359,11 @@ menu_usuarios() {
         echo -e " ${green}[10]${plain} ➮ 🔒 MENU CUENTAS SSR/SS (#OFFICIAL)"
         echo -e " ${green}[11]${plain} ➮ 🔒 BOT CLIENTES TELEGRAM [ OFF ](#BETA)"
         echo -e " ${green}[12]${plain} ➮ 🔒 VERIFICADOR CLIENTES ( INDV ) "
+        checkuser_port=$(grep -m1 '^PORT=' /root/joif-core/.env 2>/dev/null | cut -d'=' -f2- | tr -d '\r\n')
+        checkuser_port="${checkuser_port:-3000}"
         checkuser_status="${red}[OFF]${plain}"
-        if systemctl is-active --quiet joif-api >/dev/null 2>&1; then
-            checkuser_status="${green}[ON]${plain}"
+        if systemctl is-active --quiet joif >/dev/null 2>&1 || systemctl is-active --quiet joif-api >/dev/null 2>&1; then
+            checkuser_status="${green}[ON:${checkuser_port}]${plain}"
         fi
         
         echo -e " ${green}[13]${plain} ➮ 🚀 ACTIVAR / REINSTALAR API CheckUser ( ${checkuser_status} )"
@@ -1363,21 +1365,41 @@ instalar_api_checkuser() {
     fi
     
     echo -e "${yellow}[+] Preparando entorno API...${plain}"
-    cd /root/joif-core || echo "Advertencia: Directorio joif-core no existe. Creando." && mkdir -p /root/joif-core
-    
+    mkdir -p /root/joif-core
+    cd /root/joif-core || return 1
+
     if [ ! -f /root/joif-core/package.json ]; then
-        # Descargamos los archivos básicos desde un repo o usamos los que están si es la misma carpeta.
-        # Ya que se asume que server.js está clonado junto con el menú.
         echo -e "${blue}Instalando dependencias locales de npm...${plain}"
-        npm install express cors dotenv sqlite3 body-parser
-    else
-        npm install
+        npm install --omit=dev express cors dotenv sqlite3 jsonwebtoken
+    elif [ ! -d /root/joif-core/node_modules/express ]; then
+        npm install --omit=dev --no-audit --no-fund
     fi
-    
-    echo -e "${yellow}[+] Creando Servicio en Segundo Plano (Puerto $port_input)...${plain}"
-    cat << EOF > /etc/systemd/system/joif-api.service
+
+    # Actualizar PORT en .env para mantener sincronizados joif.service y proxy.js
+    if [ ! -f /root/joif-core/.env ]; then
+        cat << EOF > /root/joif-core/.env
+PORT=$port_input
+API_KEY=joif2026
+NODE_API_SECRET=joif2026
+EOF
+    elif grep -q '^PORT=' /root/joif-core/.env; then
+        sed -i "s/^PORT=.*/PORT=$port_input/" /root/joif-core/.env
+    else
+        echo "PORT=$port_input" >> /root/joif-core/.env
+    fi
+
+    # Evitar conflicto de puerto con el antiguo servicio duplicado joif-api.service
+    if systemctl list-unit-files 2>/dev/null | grep -q '^joif-api\.service'; then
+        systemctl stop joif-api >/dev/null 2>&1 || true
+        systemctl disable joif-api >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/joif-api.service
+    fi
+
+    NODE_BIN=$(command -v node 2>/dev/null || echo "/usr/bin/node")
+    echo -e "${yellow}[+] Configurando servicio único joif.service (Puerto $port_input)...${plain}"
+    cat << EOF > /etc/systemd/system/joif.service
 [Unit]
-Description=JOIF API CheckUser Node.js
+Description=JOIF Web Panel and CheckUser API
 After=network.target
 
 [Service]
@@ -1385,40 +1407,61 @@ Type=simple
 User=root
 WorkingDirectory=/root/joif-core
 Environment=PORT=$port_input
-ExecStart=/usr/bin/node server.js
+ExecStart=$NODE_BIN server.js
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
     systemctl daemon-reload
-    systemctl enable joif-api
-    systemctl restart joif-api
-    
+    systemctl enable joif >/dev/null 2>&1
+    systemctl restart joif
+
     # Abrir puerto en el firewall
     if command -v ufw &> /dev/null; then
-        ufw allow ${port_input}/tcp >/dev/null 2>&1
+        ufw allow ${port_input}/tcp >/dev/null 2>&1 || true
     fi
     if command -v iptables &> /dev/null; then
-        iptables -I INPUT -p tcp --dport ${port_input} -j ACCEPT >/dev/null 2>&1
+        iptables -I INPUT 1 -p tcp --dport ${port_input} -j ACCEPT >/dev/null 2>&1 || true
+        mkdir -p /etc/iptables 2>/dev/null || true
         iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
     fi
-    
-    echo -e "\n${green}✅ API CheckUser Instalada y Corriendo en el puerto $port_input!${plain}"
-    
+
+    # Verificar que la API realmente responde en /health
+    local api_ok=0
+    for _ in 1 2 3 4 5; do
+        if curl -fsS --max-time 2 "http://127.0.0.1:${port_input}/health" >/dev/null 2>&1; then
+            api_ok=1
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$api_ok" -eq 1 ]; then
+        echo -e "\n${green}✅ API CheckUser verificada y corriendo en el puerto $port_input!${plain}"
+    else
+        echo -e "\n${red}⚠ El servicio joif.service se reinició pero no respondió en http://127.0.0.1:${port_input}/health.${plain}"
+        echo -e "${yellow}Revisa el log con: journalctl -u joif -n 30 --no-pager${plain}"
+    fi
+
     # Obtener IP Pública para mostrar en pantalla
-    PUBLIC_IP=$(curl -s ifconfig.me || echo "IP_DEL_VPS")
-    
+    PUBLIC_IP=$(curl -s --max-time 4 ifconfig.me || echo "IP_DEL_VPS")
+
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
     echo -e "${yellow}🌐 TUS ENLACES DE LA API CHECKUSER:${plain}"
-    echo -e "${white}Ruta base (Para MiVPNApp / Otras Apps):${plain}"
+    echo -e "${white}MiVPNApp / SSHPLUS (GET):${plain}"
     echo -e "${green}http://${PUBLIC_IP}:${port_input}/api/check/[usuario]${plain}"
+    echo -e "${white}DTunnel / Conecta4G / GLTunnel (GET/POST):${plain}"
+    echo -e "${green}http://${PUBLIC_IP}:${port_input}/checkUser${plain}"
+    echo -e "${white}Vía Proxy Puerto 80 (si WS-Proxy está activo):${plain}"
+    echo -e "${green}http://${PUBLIC_IP}/checkUser${plain}"
     echo -e ""
     echo -e "${white}Panel de Administración Web:${plain}"
     echo -e "${green}http://${PUBLIC_IP}:${port_input}/${plain}"
     echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e "${white}Asegúrate de tener este puerto abierto en tu VPS (UFW/Iptables).${plain}"
+    echo -e "${white}Asegúrate de tener el puerto ${port_input} abierto en tu proveedor cloud.${plain}"
     echo -e "Presiona ENTER para volver."
     read -r
 }

@@ -12,6 +12,7 @@ const SESSION_SECRET = security.sessionSecret(__dirname);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100kb' }));
+if (typeof express.urlencoded === 'function') app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 // Servir el panel web ligero estático
 app.use(express.static(path.join(__dirname, 'public')));
@@ -192,6 +193,11 @@ app.post('/api/users/:username/revoke', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'No se pudo revocar la cuenta; reintenta la operación.' }); }
 });
 
+// Healthcheck del backend y API CheckUser
+app.get(['/health', '/api/health'], (req, res) => {
+  res.json({ status: 'ok', service: 'joif-checkuser', port: Number(process.env.PORT || 3000) });
+});
+
 // Obtener todos los usuarios array simple (CheckUser Global)
 app.get(['/check', '/api/check'], async (req, res) => {
   try {
@@ -203,25 +209,32 @@ app.get(['/check', '/api/check'], async (req, res) => {
   }
 });
 
-// Validar Cuenta (CheckUser API) - Compatible con SSHPLUS
-app.get(['/api/check/:id', '/check/:id'], async (req, res) => {
-  const { id } = req.params;
+async function handleCheckUser(id, res) {
+  if (typeof id !== 'string' || !id.trim()) {
+    return res.status(400).json({ error: 'Usuario requerido' });
+  }
+  const target = id.trim();
   try {
-    const userRes = await db.query('SELECT username, hwid, expiration_date, max_connections, status FROM users WHERE username = ? OR hwid = ? LIMIT 1', [id, id]);
+    const userRes = await db.query(
+      'SELECT username, hwid, alias, expiration_date, max_connections, status FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1',
+      [target, target, target]
+    );
     if (userRes.rowCount === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
     const user = userRes.rows[0];
-    if (user.status !== 'active' || !Number.isFinite(Date.parse(user.expiration_date)) || Date.parse(user.expiration_date) <= Date.now()) return res.status(403).json({ error: 'Cuenta vencida o revocada.' });
+    if (user.status !== 'active' || !Number.isFinite(Date.parse(user.expiration_date)) || Date.parse(user.expiration_date) <= Date.now()) {
+      return res.status(403).json({ error: 'Cuenta vencida o revocada.' });
+    }
     const linuxUser = user.username;
-    
+
     // Calcular días restantes
     const expDate = new Date(user.expiration_date);
     const now = new Date();
     const diffTime = expDate - now;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     // Obtener conexiones activas y tiempo en línea
     let activeConnections = 0;
     let timeOnline = "00:00:00";
@@ -248,6 +261,21 @@ app.get(['/api/check/:id', '/check/:id'], async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+}
+
+// Validar Cuenta (CheckUser API) - Compatible con SSHPLUS, MiVPNApp, DTunnel, Conecta4G y GLTunnel
+app.get(['/api/check/:id', '/check/:id', '/checkUser/:id', '/checkuser/:id'], (req, res) => {
+  return handleCheckUser(req.params.id, res);
+});
+
+app.get(['/checkUser', '/checkuser'], (req, res) => {
+  const id = req.query.user || req.query.username || req.query.id;
+  return handleCheckUser(id, res);
+});
+
+app.post(['/checkUser', '/checkuser', '/api/checkUser', '/api/checkuser'], (req, res) => {
+  const id = req.body?.user || req.body?.username || req.body?.id || req.query.user || req.query.username;
+  return handleCheckUser(id, res);
 });
 
 // ============================================

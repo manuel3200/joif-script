@@ -66,7 +66,7 @@ function run(file, args, input = '') {
 function sessions(output, username) {
   linuxName(username); let count = 0, elapsed = 0;
   for (const line of output.split('\n')) {
-    const match = line.trim().match(/^(\d+)\s+sshd:\s+([^\s@]+)@/);
+    const match = line.trim().match(/^(\d+)\s+sshd(?:-session)?:\s+([^\s@]+)@/);
     if (match && match[2] === username) { count++; elapsed = Math.max(elapsed, Number(match[1])); }
   }
   const h = Math.floor(elapsed / 3600), m = Math.floor(elapsed % 3600 / 60), s = elapsed % 60;

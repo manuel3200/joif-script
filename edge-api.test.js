@@ -19,7 +19,10 @@ test('real SQLite backend creates, checks and revokes a test account without acc
   assert.equal((await post('/api/auth/login',{username:'admin',password:'incorrect'})).status,401);
   const login=await post('/api/auth/login',{username:'admin',password});assert.equal(login.status,200);const {token}=await login.json();
   assert.equal((await post('/api/users',{username:'stage2test',password:'temporary-account-123',expiration_date:'2099-01-01',max_connections:1},token)).status,201);
+  assert.equal((await fetch(base+'/health')).status,200);
   assert.equal((await fetch(base+'/check/stage2test')).status,200);
+  assert.equal((await fetch(base+'/checkUser?user=stage2test')).status,200);
+  assert.equal((await post('/checkUser',{user:'stage2test'})).status,200);
   assert.ok((await (await fetch(base+'/check')).json()).includes('stage2test'));
   const generated=await post('/api/users/stage2test/config',{host:'example.invalid'},token);assert.equal(generated.status,200);assert.ok((await generated.json()).data.startsWith('JOIF_VPN_V1:'));
   assert.equal((await post('/api/users/stage2test/revoke',{},token)).status,200);

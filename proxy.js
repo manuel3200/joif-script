@@ -40,7 +40,7 @@ function createProxyServer(options = {}) {
   }
   const listenPort = options.proxyPort || PROXY_PORT;
   const defaultSshPort = options.sshPort || SSH_PORT;
-  const apiPort = options.apiPort || 3000;
+  const apiPort = options.apiPort || Number(process.env.PORT) || 3000;
 
   const server = net.createServer((clientSocket) => {
     // 1. Optimización para latencia cero en juegos (Desactivar Nagle)

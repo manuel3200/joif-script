@@ -95,9 +95,12 @@ draw_active_ports() {
         fi
     fi
 
-    # 4. CheckUser API (Port 3000)
-    if echo "$raw" | grep -E '(:3000[[:space:]]|:3000$)' &>/dev/null; then
-        items+=("CheckUser API: 3000")
+    # 4. CheckUser API (Puerto configurado en .env o 3000 por defecto)
+    local api_port
+    api_port=$(grep -m1 '^PORT=' /root/joif-core/.env 2>/dev/null | cut -d'=' -f2- | tr -d '\r\n')
+    api_port="${api_port:-3000}"
+    if echo "$raw" | grep -E "(:${api_port}[[:space:]]|:${api_port}\$)" &>/dev/null; then
+        items+=("CheckUser API: ${api_port}")
     fi
 
     # 5. SSL / TLS / Stunnel (Port 443)
