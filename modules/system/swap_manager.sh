@@ -1,213 +1,81 @@
 #!/bin/bash
+# =========================================================================
+# JOIF Cloud v2.0 — Gestor de Memoria SWAP (Asistente en 1 Paso)
+# =========================================================================
 
-# Cargar utilidades (colores y funciones UI)
-source /root/joif-core/core/utils.sh 2>/dev/null
-swap_file="/swapfile"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../../core/utils.sh" 2>/dev/null || source /root/joif-core/core/utils.sh 2>/dev/null
 
-# Limpiar pantalla y mostrar cabecera intro (solo primera vez)
-clear
-echo -e "${red}============================================================${plain}"
-echo -e "${white}Esto le ayudara a crear un archivo swap para su sistema${plain}"
-echo -e "${red}============================================================${plain}"
-echo -e "${green}Enter para continuar...${plain}"
-read -p ""
+SWAP_FILE="/swapfile"
+
+crear_y_activar_swap() {
+    local size_gb="$1"
+    echo -e "\n${yellow}[*] Configurando SWAP de ${size_gb}GB en ${SWAP_FILE}...${plain}"
+
+    if [ -f "$SWAP_FILE" ]; then
+        swapoff "$SWAP_FILE" 2>/dev/null || true
+        sed -i "\|${SWAP_FILE}|d" /etc/fstab
+        rm -f "$SWAP_FILE"
+    fi
+
+    if ! fallocate -l "${size_gb}G" "$SWAP_FILE" 2>/dev/null; then
+        dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$((size_gb * 1024))" status=progress
+    fi
+
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" >/dev/null 2>&1
+    swapon "$SWAP_FILE"
+
+    grep -qF "$SWAP_FILE" /etc/fstab || echo "${SWAP_FILE} none swap sw 0 0" >> /etc/fstab
+
+    sysctl -w vm.swappiness=20 >/dev/null 2>&1 || true
+    echo "vm.swappiness=20" > /etc/sysctl.d/98-joif-swap.conf
+
+    echo -e "  ${green}✔ SWAP de ${size_gb}GB creada, activada de forma permanente y optimizada (swappiness=20).${plain}"
+    pause
+}
+
+eliminar_swap() {
+    echo -e "\n${yellow}[*] Desactivando y eliminando ${SWAP_FILE}...${plain}"
+    swapoff "$SWAP_FILE" 2>/dev/null || true
+    sed -i "\|${SWAP_FILE}|d" /etc/fstab 2>/dev/null || true
+    rm -f "$SWAP_FILE" /etc/sysctl.d/98-joif-swap.conf
+    echo -e "  ${green}✔ Memoria SWAP eliminada correctamente.${plain}"
+    pause
+}
 
 while true; do
-    clear
-    echo -e "${red}============================================================${plain}"
-    echo -e "${green}Seleccione una opcion${plain}"
-    echo -e "${red}============================================================${plain}"
-    echo -e "${green}1)${plain} Crear/Eliminar archivo"
-    echo -e "${green}2)${plain} Comprovar archivo"
-    echo -e "${green}3)${plain} Dar formato y permisos al archivo"
-    echo -e "${green}4)${plain} Activar/Desactvar swap"
-    echo -e "${green}5)${plain} Prioridad swap"
-    echo ""
-    echo -e "${green}0)${plain} Salir"
-    echo -e "${red}============================================================${plain}"
-    read -p "$(echo -e ${green}"Opcion:"${plain}) " opc
+    ui_title "GESTOR DE MEMORIA VIRTUAL SWAP"
+    local_swap=$(free -h 2>/dev/null | awk '/^Swap:/ {print $3 " / " $2}')
+    cur_swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "60")
+    echo -e "  ${gray}SWAP actual:${plain} ${white}${local_swap:-N/A}${plain}   ${gray}│   Swappiness:${plain} ${cyan}${cur_swappiness}${plain}"
+    ui_subline
+    echo -e "  ${green}[1]${plain} Crear y activar SWAP de 2 GB (recomendado para VPS 1–2 GB RAM)"
+    echo -e "  ${green}[2]${plain} Crear y activar SWAP de 4 GB"
+    echo -e "  ${green}[3]${plain} Crear y activar SWAP de 8 GB"
+    echo -e "  ${yellow}[4]${plain} Cambiar prioridad swappiness (actual: ${cur_swappiness})"
+    echo -e "  ${red}[5]${plain} Desactivar y eliminar archivo SWAP"
+    echo -e "  ${white}[0]${plain} Volver"
+    ui_line
+    read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_sw
 
-    case $opc in
-        1)
-            clear
-            if [ -f "$swap_file" ]; then
-                echo -e "${red}============================================================${plain}"
-                echo -e "${white}Se encontro un archivo swap pre-existente${plain}"
-                echo -e "${red}============================================================${plain}"
-                echo -e "desea remover el archivo"
-                echo ""
-                echo -e "1) si"
-                echo -e "2) no"
-                echo -e "${red}============================================================${plain}"
-                read -p "Opcion: " rm_opc
-                if [ "$rm_opc" == "1" ]; then
-                    swapoff $swap_file 2>/dev/null
-                    sed -i "\|${swap_file}|d" /etc/fstab
-                    rm -f $swap_file
-                    echo "Archivo removido."
-                    sleep 2
-                fi
-            else
-                echo -e "${red}============================================================${plain}"
-                echo -e "${white}se recomienda que la memoria swap${plain}"
-                echo -e "${white}sea de almenos el doble de su memoria ram${plain}"
-                echo -e "${red}============================================================${plain}"
-                echo -e "Seleccione una opcion"
-                echo ""
-                echo -e "1) 2GB"
-                echo -e "2) 4GB"
-                echo -e "3) 8GB"
-                echo ""
-                echo -e "0) Regresar al inicio"
-                echo -e "${red}============================================================${plain}"
-                read -p "Opcion: " size_opc
-                
-                size="0"
-                if [ "$size_opc" == "1" ]; then size="2G"; fi
-                if [ "$size_opc" == "2" ]; then size="4G"; fi
-                if [ "$size_opc" == "3" ]; then size="8G"; fi
-                
-                if [ "$size" != "0" ]; then
-                    clear
-                    echo -e "${red}============================================================${plain}"
-                    echo -e "${white}Creando archivo swapfile${plain}"
-                    echo -e "${red}============================================================${plain}"
-                    fallocate -l $size $swap_file 2>/dev/null
-                    if [ $? -ne 0 ]; then
-                        # Si fallocate falla, usamos dd
-                        mb=$(( ${size%G} * 1024 ))
-                        dd if=/dev/zero of=$swap_file bs=1M count=$mb status=progress
-                    fi
-                    echo -e "${red}============================================================${plain}"
-                    echo -e "Archivo creado"
-                    echo -e "comprueve detalles en la opcion 2"
-                    echo ""
-                    read -p "Enter para continuar"
-                fi
-            fi
-            ;;
-        2)
-            clear
-            echo -e "${red}============================================================${plain}"
-            echo -e "${white}Comprobando detalles del archivo${plain}"
-            echo -e "${red}============================================================${plain}"
-            if [ -f "$swap_file" ]; then
-                ls -lh $swap_file
-            else
-                echo "El archivo swap no existe."
-            fi
-            echo -e "${red}============================================================${plain}"
-            echo ""
-            read -p "Enter para continuar"
-            ;;
-        3)
-            clear
-            echo -e "${red}============================================================${plain}"
-            echo -e "${white}Asignando permisos y formato${plain}"
-            echo -e "${red}============================================================${plain}"
-            if [ -f "$swap_file" ]; then
-                chmod 600 $swap_file
-                mkswap $swap_file
-            else
-                echo "Primero debe crear el archivo en la opción 1."
-            fi
-            echo -e "${red}============================================================${plain}"
-            echo -e "listo"
-            echo ""
-            read -p "Enter para continuar"
-            ;;
+    case "$opt_sw" in
+        1) crear_y_activar_swap 2 ;;
+        2) crear_y_activar_swap 4 ;;
+        3) crear_y_activar_swap 8 ;;
         4)
-            clear
-            echo -e "${red}============================================================${plain}"
-            echo -e "${white}Como desea activar la memoria swap${plain}"
-            echo -e "${red}============================================================${plain}"
-            echo -e "1) permanente"
-            echo -e "2) temporal (asta el proximo reinicio)"
-            echo -e "3) desactivar swap"
-            echo ""
-            echo -e "0) Regresar al inicio"
-            echo -e "${red}============================================================${plain}"
-            read -p "Opcion:" act_opc
-            
-            if [ "$act_opc" == "1" ]; then
-                swapon $swap_file 2>/dev/null
-                if ! grep -q "$swap_file" /etc/fstab; then
-                    echo "$swap_file none swap sw 0 0" >> /etc/fstab
-                fi
-                clear
-                echo -e "${red}============================================================${plain}"
-                echo -e "${white}memoria swap activada${plain}"
-                echo -e "${white}de forma permanente${plain}"
-                echo -e "${red}============================================================${plain}"
-                echo ""
-                read -p "Enter para continuar"
-            elif [ "$act_opc" == "2" ]; then
-                swapon $swap_file 2>/dev/null
-                clear
-                echo -e "${red}============================================================${plain}"
-                echo -e "${white}memoria swap activada${plain}"
-                echo -e "${white}de forma temporal${plain}"
-                echo -e "${red}============================================================${plain}"
-                echo ""
-                read -p "Enter para continuar"
-            elif [ "$act_opc" == "3" ]; then
-                swapoff $swap_file 2>/dev/null
-                sed -i "\|${swap_file}|d" /etc/fstab
-                echo "Swap desactivada."
-                read -p "Enter para continuar"
+            read -r -p "$(echo -e "${white}Nuevo valor de swappiness [1-100] (recomendado 20): ${plain}")" sw_val
+            if [[ "$sw_val" =~ ^[0-9]+$ ]] && (( sw_val >= 1 && sw_val <= 100 )); then
+                sysctl -w "vm.swappiness=${sw_val}" >/dev/null 2>&1 || true
+                echo "vm.swappiness=${sw_val}" > /etc/sysctl.d/98-joif-swap.conf
+                echo -e "  ${green}✔ Swappiness configurado en ${sw_val}.${plain}"
+            else
+                echo -e "  ${red}✖ Valor inválido.${plain}"
             fi
+            pause
             ;;
-        5)
-            clear
-            echo -e "${red}============================================================${plain}"
-            echo -e "${white}Asigne la prioridad swap${plain}"
-            echo -e "${red}============================================================${plain}"
-            echo -e "1) 10"
-            echo -e "2) 20 (recomendado)"
-            echo -e "3) 30"
-            echo -e "4) 40"
-            echo -e "5) 50"
-            echo -e "6) 60"
-            echo -e "7) 70"
-            echo -e "8) 80"
-            echo -e "9) 90"
-            echo -e "10) 100"
-            echo ""
-            echo -e "0) Regresar al inicio"
-            echo -e "${red}============================================================${plain}"
-            read -p "Opcion: " prio_opc
-            
-            val=""
-            case $prio_opc in
-                1) val=10 ;;
-                2) val=20 ;;
-                3) val=30 ;;
-                4) val=40 ;;
-                5) val=50 ;;
-                6) val=60 ;;
-                7) val=70 ;;
-                8) val=80 ;;
-                9) val=90 ;;
-                10) val=100 ;;
-            esac
-            
-            if [ -n "$val" ]; then
-                sysctl vm.swappiness=$val >/dev/null 2>&1
-                if grep -q "^vm.swappiness" /etc/sysctl.conf; then
-                    sed -i "s/^vm.swappiness.*/vm.swappiness=$val/" /etc/sysctl.conf
-                else
-                    echo "vm.swappiness=$val" >> /etc/sysctl.conf
-                fi
-                echo ""
-                echo -e "swappines asignado en $val"
-                echo -e "los cambios se aplicaran"
-                echo -e "despues del reinicio (y ahora mismo)"
-                echo ""
-                read -p "Enter para continuar"
-            fi
-            ;;
-        0)
-            break
-            ;;
+        5) eliminar_swap ;;
+        0|00) break ;;
+        *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
     esac
 done

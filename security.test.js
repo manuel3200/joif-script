@@ -42,3 +42,17 @@ test('traffic collector parses /proc/pid/io deltas accurately and formats MB/GB'
   await collector.flushToDb(mockDb);
   assert.deepEqual(writes[1].params, [6000, 'joif01']);
 });
+test('rate limiter and user patch validator enforce limits and sanitize edits', () => {
+  const limiter = security.createRateLimiter({ windowMs: 10000, max: 2 });
+  assert.equal(limiter('1.2.3.4', 1000).allowed, true);
+  assert.equal(limiter('1.2.3.4', 2000).allowed, true);
+  assert.equal(limiter('1.2.3.4', 3000).allowed, false);
+  assert.equal(limiter('1.2.3.4', 12000).allowed, true);
+  const existing = { expiration_date: '2026-01-01T00:00:00.000Z' };
+  const p = security.validateUserPatch({ add_days: 30, max_connections: 4, reset_traffic: true }, existing, Date.parse('2026-11-01T00:00:00Z'));
+  assert.equal(p.max_connections, 4);
+  assert.equal(p.isFuture, true);
+  assert.equal(p.reset_traffic, true);
+  assert.throws(() => security.validateUserPatch({ max_connections: 999 }, existing));
+  assert.throws(() => security.validateUserPatch({}, existing));
+});

@@ -10,6 +10,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('[DB] Error conectando a SQLite:', err.message);
   } else {
     console.log('[DB] Conectado a SQLite exitosamente.');
+    try { fs.chmodSync(dbPath, 0o600); } catch (_) {}
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
     db.run('ALTER TABLE users ADD COLUMN alias TEXT;', () => {});

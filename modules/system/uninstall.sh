@@ -1,87 +1,67 @@
 #!/bin/bash
-# =========================================================
-# JOIF Cloud - Desinstalador Seguro del Sistema
-# =========================================================
+# =========================================================================
+# JOIF Cloud v2.0 — Desinstalador Completo y Seguro (Sin cortar SSH)
+# =========================================================================
 
-source /root/joif-core/core/utils.sh 2>/dev/null
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../../core/utils.sh" 2>/dev/null || source /root/joif-core/core/utils.sh 2>/dev/null
 
-clear
-echo -e "${red}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "          ${yellow}⚠️  DESINSTALADOR DE JOIF CLOUD  ⚠️${plain}"
-echo -e "${red}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " ${white}Esta acción detendrá y removerá los servicios de JOIF:${plain}"
-echo -e "  • Servicio Web y API Edge (puerto 3000)"
-echo -e "  • Proxy WebSocket (puerto 80)"
-echo -e "  • Limitador de multilogin y BadVPN"
-echo -e "  • Comando global 'menu'"
+ui_title "DESINSTALADOR DE JOIF CLOUD"
+echo -e "  ${white}Se detendrán y eliminarán todos los componentes de JOIF:${plain}"
+echo -e "   • Servicios: joif, joif-proxy, joif-limitador, badvpn, smartdns-client"
+echo -e "   • Reglas DNAT SmartDNS (JOIF_SMARTDNS_OUT), sysctl BBR y tuning SSH"
+echo -e "   • Comandos globales: menu, joif-update, joif-bbr, bbr, joif-smartdns"
 echo -e ""
-echo -e " ${green}✔ IMPORTANTE:${plain} Tu servidor SSH y tu acceso como root"
-echo -e "   ${green}SEGUIRÁN ACTIVOS Y FUNCIONANDO.${plain} No perderás acceso al VPS."
-echo -e "${red}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e ""
-read -p "$(echo -e ${yellow}"¿Estás seguro de que deseas desinstalar JOIF? [s/N]: "${plain})" confirm_un
+echo -e "  ${green}✔ Tu servidor SSH y acceso root seguirán intactos.${plain}"
+ui_line
+read -r -p "$(echo -e "${yellow}¿Seguro que deseas desinstalar JOIF Cloud? [s/N]: ${plain}")" confirm_un
+[[ ! "$confirm_un" =~ ^[SsYy]$ ]] && { echo -e "\n  ${green}Cancelado.${plain}"; sleep 1; exit 0; }
 
-if [[ ! "$confirm_un" =~ ^[SsYy]$ ]]; then
-    echo -e "\n${green}Operación cancelada. El sistema no ha sido modificado.${plain}"
-    sleep 2
-    exit 0
+read -r -p "$(echo -e "${yellow}¿Respaldar la base de datos antes de borrar? [S/n]: ${plain}")" backup_db
+if [[ ! "$backup_db" =~ ^[Nn]$ ]] && [ -f /root/joif-core/database.sqlite ]; then
+    BACKUP_DEST="/root/joif-users-backup-$(date +%Y%m%d-%H%M).sqlite"
+    sqlite3 /root/joif-core/database.sqlite ".backup '${BACKUP_DEST}'" 2>/dev/null || cp -f /root/joif-core/database.sqlite "$BACKUP_DEST"
+    chmod 600 "$BACKUP_DEST" 2>/dev/null || true
+    echo -e "  ${green}✔ Respaldo guardado en: ${BACKUP_DEST}${plain}"
 fi
 
-echo -e ""
-read -p "$(echo -e ${yellow}"¿Deseas respaldar la base de datos de usuarios antes de borrar? [S/n]: "${plain})" backup_db
-if [[ ! "$backup_db" =~ ^[Nn]$ ]]; then
-    if [ -f /root/joif-core/database.sqlite ]; then
-        BACKUP_DEST="/root/joif-users-backup-$(date +%Y%m%d-%H%M).sqlite"
-        cp -f /root/joif-core/database.sqlite "$BACKUP_DEST"
-        echo -e "  ${green}✔ Copia guardada en: $BACKUP_DEST${plain}"
-    fi
+read -r -p "$(echo -e "${yellow}¿Eliminar también las cuentas VPN de Linux? [s/N]: ${plain}")" purge_users
+if [[ "$purge_users" =~ ^[SsYy]$ ]] && [ -f /root/joif-core/database.sqlite ]; then
+    while IFS='|' read -r uname uhwid; do
+        target="${uhwid:-$uname}"
+        [ -z "$target" ] && continue
+        pkill -KILL -u "$target" 2>/dev/null || true
+        userdel -f "$target" 2>/dev/null || true
+    done < <(sqlite3 -separator '|' /root/joif-core/database.sqlite "SELECT username, hwid FROM users;" 2>/dev/null)
+    echo -e "  ${green}✔ Cuentas VPN de Linux eliminadas.${plain}"
 fi
 
-echo -e ""
-read -p "$(echo -e ${yellow}"¿Deseas BORRAR TODO (eliminar usuarios VPN de Linux y archivos residuales)? [S/n]: "${plain})" purge_all
-if [[ ! "$purge_all" =~ ^[Nn]$ ]]; then
-    echo -e "\n${yellow}Eliminando cuentas de clientes VPN creadas en Linux...${plain}"
-    if [ -f /root/joif-core/database.sqlite ]; then
-        sqlite3 -separator '|' /root/joif-core/database.sqlite "SELECT username, hwid FROM users;" 2>/dev/null | while IFS='|' read -r uname uhwid; do
-            target="${uhwid:-$uname}"
-            pkill -u "$target" 2>/dev/null || true
-            userdel -f "$target" 2>/dev/null || true
-            if [ -n "$uhwid" ]; then
-                userdel -f "hwid_${uhwid:0:8}" 2>/dev/null || true
-            fi
-        done
-    fi
-    awk -F: '/^hwid_/ {print $1}' /etc/passwd 2>/dev/null | while read -r huser; do
-        pkill -u "$huser" 2>/dev/null || true
-        userdel -f "$huser" 2>/dev/null || true
-    done
-    rm -rf /root/joif-backups /root/.JOIF_* /root/joif-users-backup*.sqlite /root/setup /root/joif-repo*.zip
-    echo -e "  ${green}✔ Usuarios VPN y archivos residuales purgados por completo.${plain}"
-fi
-
-echo -e "\n${blue}[1/4] Deteniendo y deshabilitando servicios...${plain}"
-for svc in joif joif-proxy joif-limitador joif-api badvpn-dual badvpn badvpn-7300 badvpn-7200; do
-    systemctl stop "$svc" 2>/dev/null
-    systemctl disable "$svc" 2>/dev/null
+echo -e "\n${blue}[1/4] Deteniendo y eliminando servicios systemd...${plain}"
+for svc in joif joif-proxy joif-limitador joif-api joif-smartdns-client badvpn-dual badvpn badvpn-7300 badvpn-7200; do
+    systemctl stop "$svc" 2>/dev/null || true
+    systemctl disable "$svc" 2>/dev/null || true
     rm -f "/etc/systemd/system/${svc}.service"
 done
 systemctl daemon-reload
 
-echo -e "${blue}[2/4] Limpiando procesos de BadVPN y proxies...${plain}"
-killall badvpn-udpgw 2>/dev/null || true
-screen -wipe 2>/dev/null || true
+echo -e "${blue}[2/4] Limpiando reglas SmartDNS, sysctl y configs drop-in SSH...${plain}"
+while iptables -t nat -C OUTPUT -j JOIF_SMARTDNS_OUT >/dev/null 2>&1; do
+    iptables -t nat -D OUTPUT -j JOIF_SMARTDNS_OUT 2>/dev/null || break
+done
+iptables -t nat -F JOIF_SMARTDNS_OUT 2>/dev/null || true
+iptables -t nat -X JOIF_SMARTDNS_OUT 2>/dev/null || true
+persist_firewall
 
-echo -e "${blue}[3/4] Eliminando comandos de terminal y alias...${plain}"
-rm -f /usr/bin/menu /usr/local/bin/menu /bin/menu /usr/bin/joif-update /bin/JOIF-badvpn
-sed -i '/alias menu=/d' /root/.bashrc
-sed -i '\|/usr/bin/menu|d' /root/.bashrc
+rm -f /etc/joif-smartdns-client.conf /etc/sysctl.d/99-vpn-tuning.conf /etc/sysctl.d/98-joif-swap.conf
+rm -f /etc/ssh/sshd_config.d/99-vpn-speed.conf /etc/ssh/sshd_config.d/95-joif-banner.conf
+safe_reload_ssh 2>/dev/null || true
 
-echo -e "${blue}[4/4] Removiendo archivos del núcleo...${plain}"
-rm -rf /root/joif-core /tmp/core.zip /root/.JOIF_welcome_done
+echo -e "${blue}[3/4] Eliminando comandos de terminal y autoinicio...${plain}"
+rm -f /usr/bin/menu /usr/local/bin/menu /bin/menu /usr/bin/joif-update /usr/bin/joif-bbr /usr/bin/bbr /usr/local/bin/joif-smartdns /bin/JOIF-badvpn
+sed -i '/alias menu=/d;\|/usr/bin/menu|d' /root/.bashrc 2>/dev/null || true
 
-echo -e "\n${green}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "   ${green}✅ JOIF CLOUD HA SIDO DESINSTALADO COMPLETAMENTE ✅${plain}"
-echo -e "${green}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " Tu terminal SSH sigue activa y sin interrupciones."
-echo -e "${green}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}\n"
+echo -e "${blue}[4/4] Removiendo directorio /root/joif-core...${plain}"
+rm -rf /root/joif-core /tmp/core.zip /run/joif_public_ip /root/.JOIF_welcome_done
+
+echo -e "\n${green}✅ JOIF CLOUD desinstalado limpiamente. Tu acceso SSH sigue intacto.${plain}\n"
 exit 0

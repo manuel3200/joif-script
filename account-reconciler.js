@@ -15,7 +15,7 @@ async function reconcileAccounts(db, system = security.run, now = Date.now()) {
       if (account.status !== 'active' || expires <= now) {
         await system('sudo', ['-n', 'usermod', '-L', '--', name]);
         await system('sudo', ['-n', 'chage', '-E', '0', '--', name]);
-        try { await system('sudo', ['-n', 'pkill', '-u', name, 'sshd']); } catch (e) { if (e.exitCode !== 1) throw e; }
+        try { await system('sudo', ['-n', 'pkill', '-KILL', '-u', name]); } catch (e) { if (e.exitCode !== 1) throw e; }
         if (account.status === 'active') { await db.query("UPDATE users SET status = 'expired' WHERE id = ?", [account.id]); summary.expired++; }
       }
     } catch (_) { summary.errors++; }

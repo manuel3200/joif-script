@@ -1,291 +1,187 @@
 #!/bin/bash
-# =========================================================
-# JOIF CLOUD - Instalador Interactivo Estilo JOIF
-# =========================================================
+# =========================================================================
+# JOIF Cloud v2.0 — Instalador Limpio, Seguro e Idempotente (Ubuntu 22/24/26)
+# =========================================================================
 
-# Colores
+set -u
+
 red='\033[1;31m'
 green='\033[1;32m'
 yellow='\033[1;33m'
 blue='\033[1;34m'
 cyan='\033[1;36m'
 white='\033[1;37m'
+gray='\033[0;90m'
 plain='\033[0m'
 
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "${yellow}           [ ! ]  ESPERE UN MOMENTO  [ ! ]${plain}"
-echo -e "${cyan}                           ••••  ${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 2
+if [ "$(id -u)" -ne 0 ]; then
+    echo -e "${red}✖ Este instalador debe ejecutarse como root.${plain}"
+    exit 1
+fi
 
-# Recolectar info
-OS=$(grep -E '^(PRETTY_NAME)=' /etc/os-release | cut -d'"' -f2 | cut -d' ' -f1,2)
-CPU=$(lscpu | grep "Model name" | awk -F: '{print $2}' | sed 's/^[ \t]*//')
-if [ -z "$CPU" ]; then CPU="Unknown"; fi
-IP=$(curl -s ifconfig.me || echo "Local")
-DATE=$(date +"%d/%m/%Y")
-TIME=$(date +"%H:%M")
+OS=$(grep -m1 '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Linux")
+CPU=$(lscpu 2>/dev/null | awk -F: '/Model name/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')
+[ -z "$CPU" ] && CPU="$(uname -m)"
+IP=$(curl -fsS --connect-timeout 3 --max-time 4 https://api.ipify.org 2>/dev/null || curl -fsS --connect-timeout 3 --max-time 4 https://ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+IP="${IP:-127.0.0.1}"
 
 clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "${yellow}           [ ! ]  ESPERE UN MOMENTO  [ ! ]${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "  ${white}SISTEMA:${plain}  ${green}$OS${plain}        ${white}CPU:${plain}  ${green}$CPU${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "    ${red}💥 INTENTANDO RECONFIGURAR UPDATER 💥${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 1
-echo -e "    ${yellow}💥 UPDATE DATE : $DATE & TIME : $TIME 💥${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 1
-echo -e "    ${green}💥 INSTALANDO NUEVOS PAQUETES ( S|P|C )    💥${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 1
-echo -e "    ${blue}💥 PREPARANDO BASE RAPIDA INSTALL    💥${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 1
-echo -e "    ${white}💥 CHECK IP FIJA $IP    💥${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 2
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+echo -e "${cyan}        _  ___ ___ _____   ____ _     ___  _   _ ____  ${plain}"
+echo -e "${cyan}       | |/ _ \_ _|  ___| / ___| |   / _ \| | | |  _ \ ${plain}"
+echo -e "${cyan}    _  | | | | | || |_   | |   | |  | | | | | | | | | |${plain}"
+echo -e "${cyan}   | |_| | |_| | ||  _|  | |___| |__| |_| | |_| | |_| |${plain}"
+echo -e "${cyan}    \___/ \___/___|_|     \____|_____\___/ \___/|____/ ${plain}"
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+echo -e "  ${gray}Versión:${plain} ${white}v2.0 (Ubuntu 22.04 / 24.04 / 26.04 LTS)${plain}"
+echo -e "  ${gray}Sistema:${plain} ${green}${OS}${plain}  ${gray}│  IP:${plain} ${yellow}${IP}${plain}"
+echo -e "  ${gray}CPU:    ${plain} ${white}${CPU}${plain}"
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+read -r -p "$(echo -e "${yellow}Presiona [Enter] para iniciar la instalación...${plain}")"
 
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "   - ${white}CPU:${plain} $CPU ${white}SISTEMA : ${plain} $OS -"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "                    ${yellow}$IP${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "  ⚔️🔰 ${blue}JOIF CLOUD V1.0 | OFICIAL 2026${plain} 🔰⚔️  -"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "${blue} +----------------------------------------------+${plain}"
-echo -e "${blue} |  __  __ _ \ \   / /  _ \ \ \   / / \ | |   |${plain}"
-echo -e "${blue} | |  \/  (_) \ \ / /| |_) | \ \ / /|  \| |   |${plain}"
-echo -e "${blue} | | |\/| | |  \ V / |  __/   \ V / | . \` |   |${plain}"
-echo -e "${blue} | | |  | | |   | |  | |       | |  | |\  |   |${plain}"
-echo -e "${blue} | |_|  |_|_|   |_|  |_|       |_|  |_| \_|   |${plain}"
-echo -e "${blue} +----------------------------------------------+${plain}"
-echo -e "${yellow}           PRESIONA ENTER PARA CONTINUAR ${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-read -r
-
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " -- ${white}INSTALAREMOS LO NECESARIO PARA EL PANEL${plain} --"
-echo -e "    SU IP REGISTRADA ES : ${yellow}$IP${plain}"
-echo -e "--  ${white}Arch : $CPU SISTEMA  $OS${plain} --"
-echo -e "${red}ATENCION A INSTALACION POR SI DEVUELVE UN ERROR${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-
-# Evitar bloqueos interactivos de Ubuntu 22/24 (needrestart y debconf)
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 if [ -f /etc/needrestart/needrestart.conf ]; then
-    sed -i "s/#\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/g" /etc/needrestart/needrestart.conf 2>/dev/null || true
-    sed -i "s/\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/g" /etc/needrestart/needrestart.conf 2>/dev/null || true
+    sed -i "s/#\?\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/g" /etc/needrestart/needrestart.conf 2>/dev/null || true
 fi
 
-# Animación de paquetes
-apt-get update -y > /dev/null 2>&1
-paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq" "psmisc" "iptables")
+echo -e "\n${blue}[1/6] Instalando paquetes base...${plain}"
+apt-get update -qq >/dev/null 2>&1
+paquetes=("curl" "wget" "git" "unzip" "sqlite3" "net-tools" "lsof" "jq" "psmisc" "iptables" "dnsutils" "openssl")
 for pkg in "${paquetes[@]}"; do
-    apt-get install -y -qq "$pkg" > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        echo -e "  - [ ${green}✅${plain} ] INSTALACION CORRECTA ${white}${pkg^^}${plain}"
+    if apt-get install -y -qq "$pkg" >/dev/null 2>&1; then
+        echo -e "  ${green}✔${plain} ${pkg}"
     else
-        echo -e "  - [ ${red}❌${plain} ] FALLO AL INSTALAR ${white}${pkg^^}${plain}"
+        echo -e "  ${red}✖${plain} ${pkg} (falló)"
     fi
-    sleep 0.2
 done
 
-# Limpiar servicios residuales conflictivos de instalaciones previas (Chumo / ADM)
-systemctl stop nginx apache2 caddy lighttpd python-proxy epro eproxy wsproxy 2>/dev/null || true
-systemctl disable nginx apache2 caddy lighttpd python-proxy epro eproxy wsproxy 2>/dev/null || true
-killall -9 nginx apache2 httpd lighttpd 2>/dev/null || true
+# Limpiar proxies heredados conflictivos en puerto 80
+for old_svc in nginx apache2 caddy lighttpd python-proxy epro eproxy wsproxy; do
+    systemctl stop "$old_svc" 2>/dev/null || true
+    systemctl disable "$old_svc" 2>/dev/null || true
+done
 pkill -9 -f "PDirect|P3Direct|PPub|PPriv|wsproxy|epro" 2>/dev/null || true
-crontab -l 2>/dev/null | grep -E -v 'autoboot|PDirect|wsproxy|epro|chumovps' | crontab - 2>/dev/null || true
-sed -i '/autoboot/d' /etc/crontab 2>/dev/null || true
-rm -f /bin/autoboot /etc/autoboot 2>/dev/null || true
 
-# Node.js y NPM (Rápido y sin bloqueos de debconf/needrestart)
-if ! command -v node &> /dev/null; then
-    apt-get install -y -qq nodejs npm > /dev/null 2>&1
-    if ! command -v node &> /dev/null; then
-        curl -fsSL --connect-timeout 10 https://deb.nodesource.com/setup_20.x 2>/dev/null | bash - > /dev/null 2>&1
-        apt-get install -y -qq nodejs > /dev/null 2>&1
+echo -e "\n${blue}[2/6] Verificando Node.js...${plain}"
+if ! command -v node >/dev/null 2>&1; then
+    apt-get install -y -qq nodejs npm >/dev/null 2>&1 || true
+    if ! command -v node >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 10 https://deb.nodesource.com/setup_20.x 2>/dev/null | bash - >/dev/null 2>&1
+        apt-get install -y -qq nodejs >/dev/null 2>&1
     fi
 fi
-echo -e "  - [ ${green}✅${plain} ] INSTALACION CORRECTA ${white}NODEJS${plain}"
-echo -e "  - [ ${green}✅${plain} ] INSTALACION CORRECTA ${white}NPM${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " ⚔️ ${yellow}GRACIAS POR SU AMABLE ESPERA !!${plain} ⚔️"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 1
+NODE_BIN=$(command -v node 2>/dev/null || echo "/usr/bin/node")
+echo -e "  ${green}✔${plain} Node.js listo ($("$NODE_BIN" -v 2>/dev/null || echo 'OK'))"
 
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "           ${yellow}AGREGA UN DOMINIO A TU SERVIDOR${plain}"
-echo -e "                     ${white}( OPCIONAL )${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " 🧬 ${green}Dominio (ENTER para usar IP)${plain}"
-read -p " Domain : " user_domain
-if [ -z "$user_domain" ]; then user_domain=$IP; fi
+echo -e "\n${blue}[3/6] Configurando dominio del nodo...${plain}"
+read -r -p "$(echo -e "${white}Dominio del VPS (Enter para usar ${IP}): ${plain}")" user_domain
+user_domain="${user_domain:-$IP}"
 echo "$user_domain" > /root/.JOIF_domain
 
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "        ${green}Descargando Core del Servidor (Git)...${plain}"
-GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/manuel3200/joif-script.git"}
-
+echo -e "\n${blue}[4/6] Descargando núcleo JOIF Cloud desde GitHub...${plain}"
+GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/manuel3200/joif-script.git}"
 if [ -d "/root/joif-core/.git" ]; then
-    echo -e "        ${yellow}Repositorio detectado, actualizando con Git...${plain}"
-    cd /root/joif-core && git reset --hard HEAD >/dev/null 2>&1 && git pull origin main >/dev/null 2>&1
-elif [ -f "/root/joif-repo.zip" ]; then
-    echo -e "        ${yellow}Detectado archivo local /root/joif-repo.zip...${plain}"
-    mkdir -p /root/joif-core && unzip -o /root/joif-repo.zip -d /root/joif-core >/dev/null 2>&1
-elif [ -f "../joif-repo.zip" ]; then
-    echo -e "        ${yellow}Detectado joif-repo.zip en directorio superior...${plain}"
-    mkdir -p /root/joif-core && unzip -o ../joif-repo.zip -d /root/joif-core >/dev/null 2>&1
+    cd /root/joif-core && git fetch origin main >/dev/null 2>&1 && git reset --hard origin/main >/dev/null 2>&1
 else
     rm -rf /root/joif-core
-    echo -e "        ${green}Clonando repositorio oficial desde GitHub...${plain}"
     git clone --depth 1 "$GIT_REPO_URL" /root/joif-core >/dev/null 2>&1
 fi
 
-# Fallback automático si git clone no pudo conectar:
 if [ ! -f "/root/joif-core/menu.sh" ]; then
-    echo -e "        ${yellow}Fallback: Descargando paquete de respaldo...${plain}"
-    REPO_URL=${REPO_URL:-"https://repo.juanconnect.online/joif-repo.zip"}
-    wget -qO /tmp/core.zip "$REPO_URL" 2>/dev/null
-    unzip -o /tmp/core.zip -d /root/joif-core > /dev/null 2>&1
-    rm -f /tmp/core.zip
+    echo -e "${red}✖ Error: No se pudo descargar /root/joif-core desde ${GIT_REPO_URL}.${plain}"
+    exit 1
 fi
 
 cd /root/joif-core
 if [ ! -d "node_modules/express" ]; then
-    npm install --omit=dev --no-audit --no-fund > /dev/null 2>&1
+    npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1
 fi
-chmod +x /root/joif-core/menu.sh /root/joif-core/update.sh 2>/dev/null
-chmod -R +x /root/joif-core/core /root/joif-core/modules 2>/dev/null
+
+chmod +x /root/joif-core/menu.sh /root/joif-core/update.sh /root/joif-core/limitador.sh 2>/dev/null || true
+chmod -R +x /root/joif-core/core /root/joif-core/modules 2>/dev/null || true
+
+unalias menu 2>/dev/null || true
+sed -i '/alias menu=/d' /root/.bashrc 2>/dev/null || true
+rm -f /usr/local/bin/menu /bin/menu
 ln -sf /root/joif-core/menu.sh /usr/bin/menu
 ln -sf /root/joif-core/update.sh /usr/bin/joif-update
 ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/joif-bbr
 ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/bbr
 ln -sf /root/joif-core/modules/network/smartdns_client.sh /usr/local/bin/joif-smartdns
-
-# Prevenir que el comando 'menu' se quede pegado en rutas viejas
-unalias menu 2>/dev/null
-sed -i '/alias menu=/d' ~/.bashrc
-rm -f /usr/local/bin/menu /bin/menu
-ln -sf /root/joif-core/menu.sh /usr/bin/menu
 hash -r
 
-# Configuración de entorno y API_KEY estándar para el Portal Web Central
+# Generar .env con API_KEY única criptográfica (nunca fija en instalaciones nuevas)
+echo -e "\n${blue}[5/6] Configurando entorno seguro y servicio joif.service...${plain}"
 if [ ! -f /root/joif-core/.env ]; then
-    cat << 'EOF' > /root/joif-core/.env
+    GEN_API_KEY=$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+    cat << EOF > /root/joif-core/.env
 PORT=3000
-API_KEY=joif2026
-NODE_API_SECRET=joif2026
+API_KEY=${GEN_API_KEY}
+NODE_API_SECRET=${GEN_API_KEY}
 EOF
+    echo -e "  ${green}✔${plain} API_KEY aleatoria generada en /root/joif-core/.env"
 else
-    grep -q '^API_KEY=' /root/joif-core/.env || echo "API_KEY=joif2026" >> /root/joif-core/.env
-    grep -q '^NODE_API_SECRET=' /root/joif-core/.env || echo "NODE_API_SECRET=joif2026" >> /root/joif-core/.env
+    echo -e "  ${green}✔${plain} Archivo .env existente conservado."
+fi
+chmod 600 /root/joif-core/.env
+
+# Limpiar servicio duplicado heredado si existía
+if systemctl list-unit-files 2>/dev/null | grep -q '^joif-api\.service'; then
+    systemctl stop joif-api 2>/dev/null || true
+    systemctl disable joif-api 2>/dev/null || true
+    rm -f /etc/systemd/system/joif-api.service
 fi
 
-cat <<EOF > /etc/systemd/system/joif.service
+cat << EOF > /etc/systemd/system/joif.service
 [Unit]
-Description=JOIF Web Panel and Proxy
+Description=JOIF Web Panel and CheckUser API
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root/joif-core
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
+ExecStart=${NODE_BIN} server.js
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
 systemctl daemon-reload
-systemctl enable joif > /dev/null 2>&1
+systemctl enable joif >/dev/null 2>&1
 systemctl restart joif
 
-# Liberar puertos en firewall del sistema (Oracle Cloud / AWS / iptables / ufw)
-if command -v iptables &>/dev/null; then
-    for p in 22 80 443 3000 7300; do
-        iptables -I INPUT 1 -p tcp --dport "$p" -j ACCEPT >/dev/null 2>&1 || true
-    done
-    iptables -I INPUT 1 -p udp --dport 7300 -j ACCEPT >/dev/null 2>&1 || true
-fi
+# Firewall idempotente y OpenSSH seguro (con validación sshd -t)
+echo -e "\n${blue}[6/6] Aplicando reglas de firewall y configuración segura OpenSSH...${plain}"
+source /root/joif-core/core/utils.sh 2>/dev/null || true
+for p in 22 80 443 3000 7300; do
+    ensure_firewall_port "$p" "tcp"
+done
+ensure_firewall_port 7300 "udp"
+ensure_firewall_port 7200 "udp"
+persist_firewall
 
-if command -v ufw &>/dev/null; then
-    for p in 22 80 443 3000 7300; do
-        ufw allow "$p"/tcp >/dev/null 2>&1 || true
-    done
-    ufw allow 7300/udp >/dev/null 2>&1 || true
-fi
-
-if command -v netfilter-persistent &>/dev/null; then
-    netfilter-persistent save >/dev/null 2>&1 || true
-elif command -v iptables-save &>/dev/null; then
-    mkdir -p /etc/iptables 2>/dev/null || true
-    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-fi
-
-# Compatibilidad shells y OpenSSH Password Authentication (Ubuntu 24 / Oracle Cloud)
-grep -qxF '/bin/false' /etc/shells || echo '/bin/false' >> /etc/shells
+grep -qxF '/bin/false' /etc/shells 2>/dev/null || echo '/bin/false' >> /etc/shells
 mkdir -p /etc/ssh/sshd_config.d
 cat << 'EOF' > /etc/ssh/sshd_config.d/01-password-auth.conf
 PasswordAuthentication yes
 KbdInteractiveAuthentication yes
 PermitEmptyPasswords no
+ClientAliveInterval 30
+ClientAliveCountMax 2
 EOF
-sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config 2>/dev/null
-
-# Optimización anti-Zombies SSH (Keep-alive aggressiveness)
-sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
-echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
-sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
-echo "ClientAliveCountMax 2" >> /etc/ssh/sshd_config
-systemctl restart sshd || systemctl restart ssh
-
-echo -e "        ${green}JOIF Configurado Exitosamente!${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-sleep 2
+safe_reload_ssh || echo -e "  ${yellow}⚠ No se pudo recargar SSH automáticamente; revisa sshd -t.${plain}"
 
 clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "           ${yellow}YA TIENES ACCESO ROOT A TU VPS?${plain}"
-echo -e " ${white}ESTO ES ESPECIAL PARA [AWS,GOOGLE,AZURE,ORACLE,ETC]${plain}"
-echo -e "     ${white}SI ENTRASTE CON UN USUARIO DIFERENTE AL ROOT${plain}"
-echo -e "    ${green}PRESIONA S, CASO CONTRARIO, IGNORA EL MENSAJE${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " ${red}APLICAR FIX de PASSWD para LIBERAR ACCESO${plain}"
-echo -e " ${white}SI YA ERES ROOT, SE CAMBIARA TU CLAVE${plain}"
-read -p " Responde [ s | n ] : " fix_root
-
-if [[ "$fix_root" =~ ^[Ss]$ ]]; then
-    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-    echo -e " ${yellow}LIBERANDO ACCESO ROOT EN SSH...${plain}"
-    sed -i 's/.*PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config
-    sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
-    systemctl restart sshd || systemctl restart ssh
-    echo -e " ${green}Configuración SSH actualizada.${plain}"
-    echo -e " ${yellow}Por favor, ingresa una nueva contraseña para root:${plain}"
-    passwd root
-    echo -e " ${green}¡Acceso Root liberado con éxito!${plain}"
-    sleep 2
-fi
-
-clear
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e "   =====>>►► 🐲 ${green}JOIF CLOUD 💥 Plus${plain} 🐲 ◄◄<<===== [V1.0]"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " \033[1mDOMINIO / IP:\033[0m   ${yellow}${user_domain}${plain}"
-echo -e " \033[1mESTADO:\033[0m         ${green}Instalado y Operativo en el Clúster${plain}"
-echo -e " \033[1mADMINISTRACIÓN:\033[0m Escribe \033[1;33mmenu\033[0m en tu terminal para gestionar"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-echo -e " ${yellow}PRESIONA ENTER PARA FINALIZAR INSTALACION${plain}"
-echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-read -r
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+echo -e "  ${green}✅ JOIF CLOUD v2.0 INSTALADO Y OPERATIVO${plain}"
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+echo -e "  ${gray}Dominio / IP :${plain} ${yellow}${user_domain}${plain} (${IP})"
+echo -e "  ${gray}Panel Web    :${plain} ${cyan}http://${user_domain}:3000/${plain}"
+echo -e "  ${gray}Consola      :${plain} Escribe ${green}menu${plain} para administrar el servidor"
+echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+read -r -p "$(echo -e "${gray}Presiona [Enter] para finalizar...${plain}")"
 clear

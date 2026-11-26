@@ -44,8 +44,8 @@ while true; do
                 # ¡EXCESO DETECTADO! 
                 echo "$(date '+%Y-%m-%d %H:%M:%S') - TUMBANDO: $l_user ($c_count/$db_limit)" >> /var/log/joif-limitador.log
                 
-                # Asesinar procesos SSH del usuario
-                pkill -u "$l_user" sshd
+                # Asesinar procesos SSH/sshd-session/Dropbear del usuario
+                pkill -KILL -u "$l_user" 2>/dev/null || true
             fi
         fi
     done
