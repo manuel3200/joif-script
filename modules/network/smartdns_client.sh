@@ -23,9 +23,12 @@ plain='\033[0m'
 # Auto-instalarse en /usr/local/bin/joif-smartdns si se ejecuta vía curl|bash o ruta temporal
 ensure_installed_binary() {
     local self_path="${BASH_SOURCE[0]:-}"
-    if [ -n "$self_path" ] && [ -f "$self_path" ] && [ "$self_path" != "$INSTALL_BIN" ]; then
-        if [ ! -f "$INSTALL_BIN" ] || ! cmp -s "$self_path" "$INSTALL_BIN" 2>/dev/null; then
-            cp -f "$self_path" "$INSTALL_BIN" 2>/dev/null || true
+    local real_self="" real_bin=""
+    [ -n "$self_path" ] && real_self="$(readlink -f "$self_path" 2>/dev/null || echo "$self_path")"
+    [ -e "$INSTALL_BIN" ] && real_bin="$(readlink -f "$INSTALL_BIN" 2>/dev/null || echo "$INSTALL_BIN")"
+    if [ -n "$real_self" ] && [ -f "$real_self" ] && [ "$real_self" != "$real_bin" ]; then
+        if [ ! -f "$INSTALL_BIN" ] || ! cmp -s "$real_self" "$INSTALL_BIN" 2>/dev/null; then
+            cp -f "$real_self" "$INSTALL_BIN" 2>/dev/null || true
             chmod +x "$INSTALL_BIN" 2>/dev/null || true
         fi
     fi

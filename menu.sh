@@ -3,12 +3,25 @@
 # JOIF Cloud v2.0 — Menú Principal Modular (JOIF TUI v2)
 # =========================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+[ ! -d "${SCRIPT_DIR}/modules" ] && [ -d "/root/joif-core/modules" ] && SCRIPT_DIR="/root/joif-core"
 source "${SCRIPT_DIR}/core/utils.sh" 2>/dev/null || source /root/joif-core/core/utils.sh 2>/dev/null
+
+run_module() {
+    local target="${SCRIPT_DIR}/$1"
+    shift || true
+    if [ -f "$target" ]; then
+        bash "$target" "$@"
+    else
+        echo -e "\n  ${red}✖ Módulo no encontrado: ${target}${plain}"
+        pause
+    fi
+}
 
 # Flag CLI autónomo: menu --autolink "<URL>" "<TOKEN>" [NOMBRE]
 if [ "${1:-}" = "--autolink" ] || [ "${1:-}" = "-a" ]; then
-    bash "${SCRIPT_DIR}/modules/tools/autolink.sh" "${2:-}" "${3:-}" "${4:-}" "cli"
+    run_module "modules/tools/autolink.sh" "${2:-}" "${3:-}" "${4:-}" "cli"
     exit $?
 fi
 
@@ -59,11 +72,11 @@ menu_herramientas() {
                 speedtest-cli --simple 2>/dev/null || echo -e "  ${red}✖ speedtest-cli no disponible.${plain}"
                 pause
                 ;;
-            3) bash "${SCRIPT_DIR}/modules/system/cleaner.sh" ;;
-            4) bash "${SCRIPT_DIR}/modules/system/swap_manager.sh" ;;
-            5) bash "${SCRIPT_DIR}/modules/system/network_tuning.sh" ;;
-            6) bash "${SCRIPT_DIR}/modules/network/smartdns_client.sh" ;;
-            7) bash "${SCRIPT_DIR}/modules/tools/backup_manager.sh" ;;
+            3) run_module "modules/system/cleaner.sh" ;;
+            4) run_module "modules/system/swap_manager.sh" ;;
+            5) run_module "modules/system/network_tuning.sh" ;;
+            6) run_module "modules/network/smartdns_client.sh" ;;
+            7) run_module "modules/tools/backup_manager.sh" ;;
             0|00) break ;;
             *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
         esac
@@ -80,9 +93,9 @@ menu_gestion() {
         ui_line
         read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_g
         case "$opt_g" in
-            1) bash "${SCRIPT_DIR}/update.sh"; pause ;;
-            2) bash "${SCRIPT_DIR}/modules/system/autostart_manager.sh" ;;
-            3) bash "${SCRIPT_DIR}/modules/system/uninstall.sh"; exit 0 ;;
+            1) run_module "update.sh"; pause ;;
+            2) run_module "modules/system/autostart_manager.sh" ;;
+            3) run_module "modules/system/uninstall.sh"; exit 0 ;;
             0|00) break ;;
             *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
         esac
@@ -107,10 +120,10 @@ while true; do
     read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_main
 
     case "$opt_main" in
-        1|01) bash "${SCRIPT_DIR}/modules/users/user_manager.sh" ;;
-        2|02) bash "${SCRIPT_DIR}/modules/network/protocol_manager.sh" ;;
+        1|01) run_module "modules/users/user_manager.sh" ;;
+        2|02) run_module "modules/network/protocol_manager.sh" ;;
         3|03) menu_herramientas ;;
-        4|04) bash "${SCRIPT_DIR}/modules/tools/autolink.sh" ;;
+        4|04) run_module "modules/tools/autolink.sh" ;;
         5|05) menu_gestion ;;
         0|00) clear; exit 0 ;;
         *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
