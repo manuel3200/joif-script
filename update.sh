@@ -37,6 +37,7 @@ if [ "$SUCCESS" = "1" ]; then
     ln -sf /root/joif-core/update.sh /usr/bin/joif-update
     ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/joif-bbr
     ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/bbr
+    ln -sf /root/joif-core/modules/network/smartdns_client.sh /usr/local/bin/joif-smartdns
     
     hash -r
     

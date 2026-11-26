@@ -1007,9 +1007,16 @@ menu_herramientas() {
         echo -e " ${green}[2]${plain} > 🚀 Test de Velocidad (Speedtest)"
         echo -e " ${green}[3]${plain} > 🧹 Limpieza y Optimización del Sistema"
         echo -e " ${green}[4]${plain} > 💾 Memoria Virtual SWAP (Crear / Optimizar)"
+        local smartdns_badge="${red}[OFF]${plain}"
+        if iptables -t nat -C OUTPUT -j JOIF_SMARTDNS_OUT >/dev/null 2>&1; then
+            local sd_ip
+            sd_ip=$(grep -m1 '^SMARTDNS_IP=' /etc/joif-smartdns-client.conf 2>/dev/null | cut -d'=' -f2- | tr -d '"\r\n')
+            smartdns_badge="${green}[ON:${sd_ip:-AR}]${plain}"
+        fi
         echo -e " ${green}[5]${plain} > 📦 Backup y Restauración de Cuentas"
         echo -e " ${green}[6]${plain} > ⚡ Autoconfigurar VPS para Portal Web (Auto-Link)"
         echo -e " ${green}[7]${plain} > ⚡ Optimización de Red TCP BBR y Búferes del Kernel (Baja Latencia / Gaming)"
+        echo -e " ${green}[8]${plain} > 🇦🇷 Smart DNS Cliente (Bypass Geo / Bancos AR) ${smartdns_badge}"
         echo -e " ${red}[0]${plain} > 🔙 Volver al menú principal"
         echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         read -p "$(echo -e ${white}"Selecciona una opción: "${plain})" opt_tools
@@ -1054,6 +1061,13 @@ menu_herramientas() {
                     bash /root/joif-core/modules/system/network_tuning.sh
                 elif [ -f "$SCRIPT_DIR/modules/system/network_tuning.sh" ]; then
                     bash "$SCRIPT_DIR/modules/system/network_tuning.sh"
+                fi
+                ;;
+            8)
+                if [ -f "/root/joif-core/modules/network/smartdns_client.sh" ]; then
+                    bash /root/joif-core/modules/network/smartdns_client.sh
+                elif [ -f "$SCRIPT_DIR/modules/network/smartdns_client.sh" ]; then
+                    bash "$SCRIPT_DIR/modules/network/smartdns_client.sh"
                 fi
                 ;;
             0|00)
