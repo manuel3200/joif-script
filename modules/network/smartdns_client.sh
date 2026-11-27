@@ -8,9 +8,15 @@ set -u
 
 CONFIG_FILE="/etc/joif-smartdns-client.conf"
 SERVICE_FILE="/etc/systemd/system/joif-smartdns-client.service"
+WATCHDOG_SERVICE="/etc/systemd/system/joif-smartdns-watchdog.service"
+STATE_FILE="/run/joif-smartdns-state"
+FAILOVER_LOG="/var/log/joif-smartdns-failover.log"
 INSTALL_BIN="/usr/local/bin/joif-smartdns"
 CHAIN_NAME="JOIF_SMARTDNS_OUT"
 DEFAULT_SMARTDNS_IP="186.122.177.239"
+WATCHDOG_INTERVAL=30
+FAIL_THRESHOLD=2
+RECOVER_THRESHOLD=3
 
 red='\033[1;31m'
 green='\033[1;32m'
@@ -114,6 +120,62 @@ PYEOF
     [ -n "$result" ]
 }
 
+# Valida que el proxy SNI (nginx 443/80) en el servidor Smart DNS esté aceptando conexiones TCP
+test_smartdns_tcp_proxy() {
+    local target_ip="$1"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 2 bash -c "exec 3<>/dev/tcp/${target_ip}/443" >/dev/null 2>&1 && return 0
+        timeout 2 bash -c "exec 3<>/dev/tcp/${target_ip}/80" >/dev/null 2>&1 && return 0
+        return 1
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$target_ip" << 'PYEOF' >/dev/null 2>&1
+import socket, sys
+ip = sys.argv[1]
+for port in (443, 80):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2.0)
+    try:
+        s.connect((ip, port))
+        s.close()
+        sys.exit(0)
+    except Exception:
+        s.close()
+sys.exit(1)
+PYEOF
+        return $?
+    fi
+    return 0
+}
+
+test_smartdns_full_health() {
+    local target_ip="$1"
+    test_smartdns_reachable "$target_ip" && test_smartdns_tcp_proxy "$target_ip"
+}
+
+log_failover_event() {
+    local msg="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${msg}" >> "$FAILOVER_LOG" 2>/dev/null || true
+    # Mantener el log liviano (últimas 200 líneas)
+    if [ -f "$FAILOVER_LOG" ] && [ "$(wc -l < "$FAILOVER_LOG" 2>/dev/null || echo 0)" -gt 250 ]; then
+        tail -n 200 "$FAILOVER_LOG" > "${FAILOVER_LOG}.tmp" 2>/dev/null && mv -f "${FAILOVER_LOG}.tmp" "$FAILOVER_LOG" 2>/dev/null || true
+    fi
+}
+
+set_runtime_state() {
+    echo "$1" > "$STATE_FILE" 2>/dev/null || true
+}
+
+get_runtime_state() {
+    load_config
+    if is_dnat_active; then
+        echo "ACTIVE"
+    elif [ "${ENABLED:-0}" = "1" ]; then
+        echo "FAILOVER"
+    else
+        echo "OFF"
+    fi
+}
+
 is_dnat_active() {
     iptables -t nat -C OUTPUT -j "$CHAIN_NAME" >/dev/null 2>&1 && \
     iptables -t nat -S "$CHAIN_NAME" 2>/dev/null | grep -q -- '--dport 53 -j DNAT'
@@ -145,8 +207,89 @@ ExecStop=$INSTALL_BIN --disable-runtime
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    cat << EOF > "$WATCHDOG_SERVICE"
+[Unit]
+Description=JOIF Smart DNS Auto-Failover Watchdog (DNS :53 + SNI :443)
+After=network-online.target joif-smartdns-client.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_BIN --watchdog
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable joif-smartdns-client.service >/dev/null 2>&1 || true
+    systemctl enable joif-smartdns-watchdog.service >/dev/null 2>&1 || true
+    systemctl restart joif-smartdns-watchdog.service >/dev/null 2>&1 || true
+}
+
+stop_watchdog_service() {
+    systemctl stop joif-smartdns-watchdog.service >/dev/null 2>&1 || true
+    systemctl disable joif-smartdns-watchdog.service >/dev/null 2>&1 || true
+}
+
+watchdog_loop() {
+    local fail_count=0
+    local ok_count=0
+
+    while true; do
+        load_config
+        if [ "${ENABLED:-0}" != "1" ] || ! is_valid_ipv4 "${SMARTDNS_IP:-}"; then
+            set_runtime_state "OFF"
+            fail_count=0
+            ok_count=0
+            sleep "$WATCHDOG_INTERVAL"
+            continue
+        fi
+
+        if test_smartdns_full_health "$SMARTDNS_IP"; then
+            fail_count=0
+            if is_dnat_active; then
+                ok_count=0
+                set_runtime_state "ACTIVE"
+            else
+                ok_count=$((ok_count + 1))
+                if [ "$ok_count" -ge "$RECOVER_THRESHOLD" ]; then
+                    if apply_dnat_rules "$SMARTDNS_IP" >/dev/null 2>&1; then
+                        set_runtime_state "ACTIVE"
+                        ok_count=0
+                        log_failover_event "[RECOVERY] Smart DNS ${SMARTDNS_IP} operativo nuevamente — DNAT reactivado."
+                    fi
+                else
+                    set_runtime_state "FAILOVER"
+                fi
+            fi
+        else
+            ok_count=0
+            fail_count=$((fail_count + 1))
+            # Reintento rápido de confirmación antes de disparar failover
+            if [ "$fail_count" -eq 1 ]; then
+                sleep 3
+                if ! test_smartdns_full_health "$SMARTDNS_IP"; then
+                    fail_count=$((fail_count + 1))
+                else
+                    fail_count=0
+                fi
+            fi
+
+            if [ "$fail_count" -ge "$FAIL_THRESHOLD" ]; then
+                if is_dnat_active; then
+                    remove_dnat_rules >/dev/null 2>&1 || true
+                    log_failover_event "[FAILOVER] Smart DNS ${SMARTDNS_IP} no responde (DNS :53 / SNI :443) — DNAT suspendido, usando DNS local."
+                fi
+                set_runtime_state "FAILOVER"
+            fi
+        fi
+
+        sleep "$WATCHDOG_INTERVAL"
+    done
 }
 
 apply_dnat_rules() {
@@ -222,8 +365,10 @@ action_activate() {
     echo -e "${green}✔ Smart DNS respondió correctamente. Aplicando reglas DNAT...${plain}"
     if apply_dnat_rules "$input_ip"; then
         save_config "$input_ip" "1"
+        set_runtime_state "ACTIVE"
         install_systemd_service
-        echo -e "${green}✅ Smart DNS ACTIVADO y persistente tras reinicios (${input_ip}:53).${plain}"
+        log_failover_event "[ACTIVADO] Smart DNS configurado hacia ${input_ip} con Watchdog Auto-Failover activo."
+        echo -e "${green}✅ Smart DNS ACTIVADO (${input_ip}:53) + Watchdog Auto-Failover activo.${plain}"
     else
         echo -e "${red}✖ Error al aplicar las reglas iptables.${plain}"
     fi
@@ -232,12 +377,15 @@ action_activate() {
 
 action_deactivate() {
     load_config
-    echo -e "\n${yellow}[*] Desactivando reglas DNAT de Smart DNS...${plain}"
+    echo -e "\n${yellow}[*] Desactivando reglas DNAT y Watchdog de Smart DNS...${plain}"
+    stop_watchdog_service
     remove_dnat_rules
     save_config "${SMARTDNS_IP:-$DEFAULT_SMARTDNS_IP}" "0"
+    set_runtime_state "OFF"
     if [ -f "$SERVICE_FILE" ]; then
         systemctl disable joif-smartdns-client.service >/dev/null 2>&1 || true
     fi
+    log_failover_event "[DESACTIVADO] Smart DNS desactivado manualmente."
     echo -e "${green}✅ Smart DNS DESACTIVADO. El tráfico DNS volvió al comportamiento normal.${plain}"
     read -r -p "Presiona Enter para continuar..."
 }
@@ -259,17 +407,26 @@ action_diagnostic() {
         echo -e " ${white}Estado DNAT (iptables) :${plain} ${red}INACTIVO${plain}"
     fi
 
-    echo -e "\n${yellow}[*] Probando consulta DNS directa a ${target}...${plain}"
+    echo -e "\n${yellow}[*] Probando consulta DNS (:53) y SNI Proxy (:443/:80) en ${target}...${plain}"
     if test_smartdns_reachable "$target"; then
-        echo -e " ${green}✔ Autorización OK: ${target} responde a esta VPS.${plain}"
+        echo -e " ${green}✔ DNS (:53) OK: ${target} responde a esta VPS.${plain}"
+        if test_smartdns_tcp_proxy "$target"; then
+            echo -e " ${green}✔ SNI Proxy (:443/:80) OK: aceptando conexiones.${plain}"
+        else
+            echo -e " ${red}✖ SNI Proxy (:443/:80) SIN RESPUESTA (nginx caído o bloqueado).${plain}"
+        fi
         if command -v dig >/dev/null 2>&1; then
             local ar_test
             ar_test=$(dig +short +time=3 +tries=1 "@${target}" argentina.gob.ar A 2>/dev/null | head -n1 || true)
             echo -e " ${white}Resolución argentina.gob.ar :${plain} ${green}${ar_test:-Sin respuesta}${plain}"
         fi
     else
-        echo -e " ${red}✖ Sin respuesta desde ${target}:53 (verifica whitelist o firewall).${plain}"
+        echo -e " ${red}✖ Sin respuesta DNS desde ${target}:53 (verifica whitelist o firewall).${plain}"
     fi
+
+    local wd_status="${red}INACTIVO${plain}"
+    systemctl is-active --quiet joif-smartdns-watchdog.service 2>/dev/null && wd_status="${green}ACTIVO (cada ${WATCHDOG_INTERVAL}s)${plain}"
+    echo -e " ${white}Watchdog Auto-Failover :${plain} ${wd_status}"
 
     echo -e "\n${yellow}[*] Reglas actuales en nat/${CHAIN_NAME}:${plain}"
     iptables -t nat -S "$CHAIN_NAME" 2>/dev/null || echo " (Cadena no creada / inactiva)"
@@ -277,25 +434,46 @@ action_diagnostic() {
     read -r -p "Presiona Enter para continuar..."
 }
 
+action_view_log() {
+    clear
+    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    echo -e "   ${yellow}📜 HISTORIAL DE FAILOVER / RECUPERACIÓN SMART DNS${plain}"
+    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    if [ -f "$FAILOVER_LOG" ] && [ -s "$FAILOVER_LOG" ]; then
+        tail -n 25 "$FAILOVER_LOG"
+    else
+        echo -e "  ${white}Sin eventos registrados todavía.${plain}"
+    fi
+    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    read -r -p "Presiona Enter para continuar..."
+}
+
 show_menu() {
     ensure_installed_binary
     while true; do
         load_config
-        local status_badge="${red}[OFF]${plain}"
-        if is_dnat_active; then
-            status_badge="${green}[ON -> ${SMARTDNS_IP:-Activo}]${plain}"
-        fi
+        local state status_badge wd_badge
+        state=$(get_runtime_state)
+        case "$state" in
+            ACTIVE)   status_badge="${green}[ON -> ${SMARTDNS_IP:-Activo}]${plain}" ;;
+            FAILOVER) status_badge="${yellow}[FAILOVER -> DNS local (AR caído)]${plain}" ;;
+            *)        status_badge="${red}[OFF]${plain}" ;;
+        esac
+        wd_badge="${red}OFF${plain}"
+        systemctl is-active --quiet joif-smartdns-watchdog.service 2>/dev/null && wd_badge="${green}ON (${WATCHDOG_INTERVAL}s)${plain}"
 
         clear
-        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-        echo -e "   ${yellow}🇦🇷 JOIF SMART DNS CLIENTE (DNAT PUERTO 53)${plain}"
-        echo -e "   ${white}Estado actual: ${status_badge}${plain}"
-        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
-        echo -e " ${green}[1]${plain} > 🚀 Activar / Cambiar IP Smart DNS"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "   ${yellow}🇦🇷 JOIF SMART DNS CLIENTE (DNAT PUERTO 53 + FAILOVER)${plain}"
+        echo -e "   ${white}Estado actual : ${status_badge}${plain}"
+        echo -e "   ${white}Watchdog AR   : ${wd_badge}${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e " ${green}[1]${plain} > 🚀 Activar / Cambiar IP Smart DNS (con Auto-Failover)"
         echo -e " ${green}[2]${plain} > 🛑 Desactivar Smart DNS (restaurar DNS normal)"
-        echo -e " ${green}[3]${plain} > 🔍 Probar conexión y ver diagnóstico"
+        echo -e " ${green}[3]${plain} > 🔍 Probar conexión (DNS :53 + SNI :443) y diagnóstico"
+        echo -e " ${green}[4]${plain} > 📜 Ver historial de eventos Failover / Recuperación"
         echo -e " ${red}[0]${plain} > 🔙 Salir / Volver"
-        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+        echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
         echo -e " ${white}Acceso rápido por consola: ${cyan}joif-smartdns${plain}"
         echo ""
         read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt
@@ -304,6 +482,7 @@ show_menu() {
             1) action_activate ;;
             2) action_deactivate ;;
             3) action_diagnostic ;;
+            4) action_view_log ;;
             0|00) break ;;
             *) echo -e "${red}Opción inválida.${plain}"; sleep 1 ;;
         esac
@@ -319,22 +498,38 @@ case "${1:-}" in
     --apply)
         load_config
         if [ "${ENABLED:-0}" = "1" ] && is_valid_ipv4 "${SMARTDNS_IP:-}"; then
-            apply_dnat_rules "$SMARTDNS_IP"
+            if test_smartdns_full_health "$SMARTDNS_IP"; then
+                apply_dnat_rules "$SMARTDNS_IP"
+                set_runtime_state "ACTIVE"
+            else
+                remove_dnat_rules >/dev/null 2>&1 || true
+                set_runtime_state "FAILOVER"
+                log_failover_event "[BOOT-FAILOVER] Al iniciar, ${SMARTDNS_IP} no respondió — arrancando en DNS local."
+            fi
         fi
+        ;;
+    --watchdog)
+        watchdog_loop
         ;;
     --disable|--disable-runtime)
         remove_dnat_rules
         if [ "${1:-}" = "--disable" ]; then
+            stop_watchdog_service
             load_config
             save_config "${SMARTDNS_IP:-$DEFAULT_SMARTDNS_IP}" "0"
+            set_runtime_state "OFF"
             systemctl disable joif-smartdns-client.service >/dev/null 2>&1 || true
         fi
         ;;
     --status)
         load_config
-        if is_dnat_active; then
+        st=$(get_runtime_state)
+        if [ "$st" = "ACTIVE" ]; then
             echo "ON:${SMARTDNS_IP:-active}"
             exit 0
+        elif [ "$st" = "FAILOVER" ]; then
+            echo "FAILOVER:${SMARTDNS_IP:-down}"
+            exit 2
         else
             echo "OFF"
             exit 1

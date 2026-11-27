@@ -13,8 +13,11 @@ app.use(cors());
 app.use(express.json({ limit: '100kb' }));
 if (typeof express.urlencoded === 'function') app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
-// Servir el panel web ligero estático
-app.use(express.static(path.join(__dirname, 'public')));
+// Servir el panel web ligero estático (en :3000 raíz y en /panel para acceso por puerto 80)
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+app.get('/panel', (req, res) => res.redirect(302, '/panel/'));
+app.use('/panel', express.static(publicDir));
 
 const loginLimiter = typeof security.createRateLimiter === 'function'
   ? security.createRateLimiter({ windowMs: 15 * 60 * 1000, max: 12 })
@@ -348,7 +351,8 @@ app.get('/api/system/status', authMiddleware, async (req, res) => {
       badvpn_7200: false,
       limitador: false,
       bbr: false,
-      smartdns: false
+      smartdns: false,
+      firewall: false
     };
 
     if (process.platform === 'linux') {
@@ -374,6 +378,13 @@ app.get('/api/system/status', authMiddleware, async (req, res) => {
         await security.run('iptables', ['-t', 'nat', '-C', 'OUTPUT', '-j', 'JOIF_SMARTDNS_OUT']);
         services.smartdns = true;
       } catch (_) {}
+      for (const fwChain of ['JOIF_FW_TORRENT', 'JOIF_FW_SPAM', 'JOIF_FW_CUSTOM']) {
+        try {
+          await security.run('iptables', ['-C', 'OUTPUT', '-j', fwChain]);
+          services.firewall = true;
+          break;
+        } catch (_) {}
+      }
     }
 
     res.json({

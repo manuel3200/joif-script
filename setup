@@ -109,6 +109,7 @@ ln -sf /root/joif-core/update.sh /usr/bin/joif-update
 ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/joif-bbr
 ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/bbr
 ln -sf /root/joif-core/modules/network/smartdns_client.sh /usr/local/bin/joif-smartdns
+ln -sf /root/joif-core/modules/network/firewall_manager.sh /usr/local/bin/joif-firewall
 hash -r
 
 # Generar .env con API_KEY única criptográfica (nunca fija en instalaciones nuevas)
@@ -162,6 +163,7 @@ for p in 22 80 443 3000 7300; do
 done
 ensure_firewall_port 7300 "udp"
 ensure_firewall_port 7200 "udp"
+bash /root/joif-core/modules/network/firewall_manager.sh --enable-default >/dev/null 2>&1 || true
 persist_firewall
 
 grep -qxF '/bin/false' /etc/shells 2>/dev/null || echo '/bin/false' >> /etc/shells
@@ -180,7 +182,8 @@ echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "  ${green}✅ JOIF CLOUD v2.0 INSTALADO Y OPERATIVO${plain}"
 echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
 echo -e "  ${gray}Dominio / IP :${plain} ${yellow}${user_domain}${plain} (${IP})"
-echo -e "  ${gray}Panel Web    :${plain} ${cyan}http://${user_domain}:3000/${plain}"
+echo -e "  ${gray}Panel Web    :${plain} ${cyan}http://${user_domain}:3000/${plain} ${gray}(o http://${user_domain}/panel/ vía WS :80)${plain}"
+echo -e "  ${gray}Protección   :${plain} ${green}Escudo Anti-Torrent + Anti-SPAM activado${plain}"
 echo -e "  ${gray}Consola      :${plain} Escribe ${green}menu${plain} para administrar el servidor"
 echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
 read -r -p "$(echo -e "${gray}Presiona [Enter] para finalizar...${plain}")"

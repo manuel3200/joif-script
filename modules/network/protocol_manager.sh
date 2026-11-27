@@ -49,40 +49,48 @@ liberar_puerto_80() {
     return 1
 }
 
-gestionar_ws_proxy() {
-    ui_title "PROXY WEBSOCKET (PUERTO 80 -> SSH 22)"
-    if systemctl is-active --quiet joif-proxy 2>/dev/null; then
-        echo -e "  ${green}● joif-proxy se encuentra ACTIVO en puerto 80.${plain}\n"
-        echo -e "  ${green}[1]${plain} Reiniciar y verificar puerto 80"
-        echo -e "  ${red}[2]${plain} Detener servicio y liberar puerto 80"
-        echo -e "  ${white}[0]${plain} Volver"
-        ui_subline
-        read -r -p "$(echo -e "${white}Opción: ${plain}")" ws_act
-        case "$ws_act" in
-            2)
-                systemctl stop joif-proxy 2>/dev/null || true
-                systemctl disable joif-proxy 2>/dev/null || true
-                echo -e "  ${green}✔ Proxy WebSocket detenido.${plain}"
-                pause; return
-                ;;
-            0|"") return ;;
-        esac
-    fi
+get_env_val() {
+    local key="$1" def="$2"
+    local val
+    val=$(grep -m1 "^${key}=" /root/joif-core/.env 2>/dev/null | cut -d'=' -f2- | tr -d '"\r\n')
+    echo "${val:-$def}"
+}
 
+set_env_val() {
+    local key="$1" val="$2"
+    touch /root/joif-core/.env
+    if grep -q "^${key}=" /root/joif-core/.env 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${val}|" /root/joif-core/.env
+    else
+        echo "${key}=${val}" >> /root/joif-core/.env
+    fi
+    chmod 600 /root/joif-core/.env 2>/dev/null || true
+}
+
+aplicar_ws_proxy() {
+    local ports_csv="$1"
+    local v2_port="$2"
+    local v2_path="$3"
     local node_bin
     node_bin=$(command -v node 2>/dev/null || echo "/usr/bin/node")
+
     liberar_puerto_80
+
+    local exec_cmd="${node_bin} /root/joif-core/proxy.js --ports ${ports_csv} --target 22"
+    if [ -n "$v2_port" ] && [ "$v2_port" != "0" ]; then
+        exec_cmd+=" --v2ray-port ${v2_port} --v2ray-path ${v2_path:-/v2ray}"
+    fi
 
     cat << EOF > /etc/systemd/system/joif-proxy.service
 [Unit]
-Description=JOIF High-Performance WebSocket SSH Proxy (Port 80)
+Description=JOIF High-Performance WebSocket SSH Proxy (Ports ${ports_csv})
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root/joif-core
-ExecStart=${node_bin} /root/joif-core/proxy.js --port 80 --target 22
+ExecStart=${exec_cmd}
 Restart=always
 RestartSec=2
 LimitNOFILE=65535
@@ -94,17 +102,99 @@ EOF
     systemctl daemon-reload
     systemctl enable joif-proxy >/dev/null 2>&1
     systemctl restart joif-proxy
-    ensure_firewall_port 80 "tcp"
-    persist_firewall
 
-    sleep 1
-    if systemctl is-active --quiet joif-proxy; then
-        echo -e "\n  ${green}✔ Proxy WebSocket activo en puerto 80 -> SSH local 22.${plain}"
-    else
-        echo -e "\n  ${red}✖ Error al iniciar joif-proxy:${plain}"
-        journalctl -u joif-proxy -n 10 --no-pager 2>/dev/null
-    fi
-    pause
+    local IFS=','
+    for p in $ports_csv; do
+        [[ "$p" =~ ^[0-9]+$ ]] && ensure_firewall_port "$p" "tcp"
+    done
+    persist_firewall
+}
+
+gestionar_ws_proxy() {
+    while true; do
+        local cur_ports cur_v2p cur_v2path st_badge
+        cur_ports=$(get_env_val "PROXY_PORTS" "80")
+        cur_v2p=$(get_env_val "V2RAY_PORT" "0")
+        cur_v2path=$(get_env_val "V2RAY_PATH" "/v2ray")
+        st_badge="${red}INACTIVO${plain}"
+        systemctl is-active --quiet joif-proxy 2>/dev/null && st_badge="${green}ACTIVO${plain}"
+
+        ui_title "PROXY WEBSOCKET MULTI-PUERTO + PANEL /panel"
+        echo -e "  ${white}Estado        :${plain} ${st_badge}"
+        echo -e "  ${white}Puertos TCP   :${plain} ${cyan}${cur_ports}${plain} ${gray}(por defecto: 80)${plain}"
+        echo -e "  ${white}Panel en :80  :${plain} ${cyan}http://$(get_public_ip)/panel/${plain}"
+        if [ "$cur_v2p" != "0" ] && [ -n "$cur_v2p" ]; then
+            echo -e "  ${white}Desvío V2Ray  :${plain} ${green}${cur_v2path} -> 127.0.0.1:${cur_v2p}${plain}"
+        else
+            echo -e "  ${white}Desvío V2Ray  :${plain} ${gray}Desactivado (opcional)${plain}"
+        fi
+        ui_subline
+        echo -e "  ${green}[1]${plain} Instalar / Reiniciar WS-Proxy (puertos actuales)"
+        echo -e "  ${green}[2]${plain} Configurar puertos extra (ej. 80,8080,8880,2052)"
+        echo -e "  ${green}[3]${plain} Configurar desvío V2Ray/Xray en el mismo puerto 80"
+        echo -e "  ${red}[4]${plain} Detener servicio y liberar puertos"
+        echo -e "  ${white}[0]${plain} Volver"
+        ui_line
+        read -r -p "$(echo -e "${white}Opción: ${plain}")" ws_act
+
+        case "$ws_act" in
+            1)
+                aplicar_ws_proxy "$cur_ports" "$cur_v2p" "$cur_v2path"
+                sleep 1
+                if systemctl is-active --quiet joif-proxy 2>/dev/null; then
+                    echo -e "\n  ${green}✔ WS-Proxy activo en puertos: ${cur_ports}${plain}"
+                else
+                    echo -e "\n  ${red}✖ Error al iniciar joif-proxy:${plain}"
+                    journalctl -u joif-proxy -n 10 --no-pager 2>/dev/null
+                fi
+                pause
+                ;;
+            2)
+                echo -e "\n  ${gray}Puertos recomendados Cloudflare/CDN: 80, 8080, 8880, 2052, 2082${plain}"
+                echo -e "  ${gray}Escribe los puertos separados por coma (ej: 80,8080) o '80' para dejar solo el 80.${plain}"
+                read -r -p "$(echo -e "  ${green}► Puertos [${cur_ports}]: ${plain}")" new_ports
+                new_ports=$(echo "${new_ports:-$cur_ports}" | tr ' ' ',' | tr -cd '0-9,')
+                new_ports=$(echo "$new_ports" | sed 's/,\+/,/g; s/^,//; s/,$//')
+                if [ -z "$new_ports" ]; then
+                    echo -e "  ${red}✖ Lista de puertos inválida.${plain}"; pause; continue
+                fi
+                set_env_val "PROXY_PORTS" "$new_ports"
+                aplicar_ws_proxy "$new_ports" "$cur_v2p" "$cur_v2path"
+                sleep 1
+                echo -e "\n  ${green}✔ Puertos actualizados y activos: ${new_ports}${plain}"
+                pause
+                ;;
+            3)
+                echo -e "\n  ${gray}Permite compartir el puerto 80 entre SSH-WS y V2Ray/Xray WebSocket.${plain}"
+                echo -e "  ${gray}Ingresa 0 en el puerto local para desactivar el desvío.${plain}"
+                read -r -p "$(echo -e "  ${green}► Puerto interno V2Ray/Xray [${cur_v2p}]: ${plain}")" new_v2p
+                new_v2p="${new_v2p:-$cur_v2p}"
+                if [[ ! "$new_v2p" =~ ^[0-9]+$ ]] || [ "$new_v2p" -gt 65535 ]; then
+                    echo -e "  ${red}✖ Puerto inválido.${plain}"; pause; continue
+                fi
+                if [ "$new_v2p" -gt 0 ]; then
+                    read -r -p "$(echo -e "  ${green}► Ruta WebSocket [${cur_v2path}]: ${plain}")" new_v2path
+                    new_v2path="${new_v2path:-$cur_v2path}"
+                    [[ "$new_v2path" != /* ]] && new_v2path="/${new_v2path}"
+                    set_env_val "V2RAY_PATH" "$new_v2path"
+                else
+                    new_v2path="$cur_v2path"
+                fi
+                set_env_val "V2RAY_PORT" "$new_v2p"
+                aplicar_ws_proxy "$cur_ports" "$new_v2p" "$new_v2path"
+                echo -e "\n  ${green}✔ Configuración de multiplexado guardada.${plain}"
+                pause
+                ;;
+            4)
+                systemctl stop joif-proxy 2>/dev/null || true
+                systemctl disable joif-proxy 2>/dev/null || true
+                echo -e "  ${green}✔ Proxy WebSocket detenido.${plain}"
+                pause
+                ;;
+            0|"") break ;;
+            *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
+        esac
+    done
 }
 
 gestionar_badvpn() {
@@ -252,22 +342,26 @@ mostrar_estado_protocolos() {
         fi
     }
 
-    local s_ssh=0 s_api=0 s_ws=0 s_ssl=0 s_bad=0 s_lim=0 s_bbr=0 s_sdns=0
+    local s_ssh=0 s_api=0 s_ws=0 s_ssl=0 s_bad=0 s_lim=0 s_fw=0 s_bbr=0 s_sdns=0
+    local ws_ports
+    ws_ports=$(get_env_val "PROXY_PORTS" "80")
     (systemctl is-active --quiet ssh || systemctl is-active --quiet sshd) 2>/dev/null && s_ssh=1
     systemctl is-active --quiet joif 2>/dev/null && s_api=1
     systemctl is-active --quiet joif-proxy 2>/dev/null && s_ws=1
     systemctl is-active --quiet stunnel4 2>/dev/null && s_ssl=1
     (systemctl is-active --quiet badvpn-7300 || pgrep -x badvpn-udpgw >/dev/null) 2>/dev/null && s_bad=1
     systemctl is-active --quiet joif-limitador 2>/dev/null && s_lim=1
+    (iptables -C OUTPUT -j JOIF_FW_TORRENT || iptables -C OUTPUT -j JOIF_FW_SPAM || iptables -C OUTPUT -j JOIF_FW_CUSTOM) >/dev/null 2>&1 && s_fw=1
     sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -qx 'bbr' && s_bbr=1
     iptables -t nat -C OUTPUT -j JOIF_SMARTDNS_OUT >/dev/null 2>&1 && s_sdns=1
 
     print_row "OpenSSH (Puerto 22)" "$s_ssh"
     print_row "JOIF CheckUser API" "$s_api" "(:$(get_api_port))"
-    print_row "WebSocket Proxy (Puerto 80)" "$s_ws"
+    print_row "WebSocket Proxy" "$s_ws" "(:${ws_ports})"
     print_row "SSL Stunnel (Puerto 443)" "$s_ssl"
     print_row "BadVPN UDP-GW (7300/7200)" "$s_bad"
-    print_row "Limitador Multilogin" "$s_lim"
+    print_row "Limitador Inteligente" "$s_lim"
+    print_row "Escudo Anti-Torrent/SPAM" "$s_fw"
     print_row "TCP BBR (Kernel)" "$s_bbr"
     print_row "Smart DNS Cliente (AR)" "$s_sdns"
     ui_line
@@ -276,12 +370,19 @@ mostrar_estado_protocolos() {
 
 while true; do
     draw_header
+    fw_badge="${red}[OFF]${plain}"
+    if (iptables -C OUTPUT -j JOIF_FW_TORRENT || iptables -C OUTPUT -j JOIF_FW_SPAM || iptables -C OUTPUT -j JOIF_FW_CUSTOM) >/dev/null 2>&1; then
+        fw_badge="${green}[ON]${plain}"
+    fi
+    ws_ports_lbl=$(get_env_val "PROXY_PORTS" "80")
+
     echo -e "  ${yellow}PROTOCOLOS VPN Y TÚNELES${plain}"
     ui_subline
-    echo -e "  ${green}[1]${plain} Proxy WebSocket Optimizado (Puerto 80 -> 22)"
+    echo -e "  ${green}[1]${plain} Proxy WebSocket Multi-Puerto + /panel ${cyan}[:${ws_ports_lbl}]${plain}"
     echo -e "  ${green}[2]${plain} BadVPN UDP-GW (Puertos 7300 y 7200)"
     echo -e "  ${green}[3]${plain} SSL / TLS Stunnel (Puerto 443 -> WS 80)"
-    echo -e "  ${green}[4]${plain} Estado de protocolos en vivo"
+    echo -e "  ${green}[4]${plain} Firewall Anti-Torrent & Anti-SPAM   ${fw_badge}"
+    echo -e "  ${green}[5]${plain} Estado de protocolos en vivo"
     echo -e "  ${red}[0]${plain} Volver al menú principal"
     ui_line
     read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_prot
@@ -290,7 +391,8 @@ while true; do
         1) gestionar_ws_proxy ;;
         2) gestionar_badvpn ;;
         3) gestionar_stunnel ;;
-        4) mostrar_estado_protocolos ;;
+        4) bash "${SCRIPT_DIR}/firewall_manager.sh" ;;
+        5) mostrar_estado_protocolos ;;
         0|00) break ;;
         *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
     esac

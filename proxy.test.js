@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('node:net');
-const { createProxyServer, parseTarget } = require('./proxy');
+const { createProxyServer, parseTarget, parsePorts } = require('./proxy');
 
 test('parseTarget extracts valid local ports and falls back safely', () => {
   assert.equal(parseTarget('127.0.0.1:22', 22), 22);
@@ -258,4 +258,63 @@ test('proxy forwards HTTP API requests (/api/ and /check) to local API port', as
   assert.ok(buf.startsWith('HTTP/1.1 200 OK'));
   assert.ok(buf.includes('["testuser"]'));
   client.destroy();
+});
+
+test('parsePorts parses multi-port lists safely and falls back to [80]', () => {
+  assert.deepEqual(parsePorts('80,8080,8880,80'), [80, 8080, 8880]);
+  assert.deepEqual(parsePorts('80 2052 invalid 99999'), [80, 2052]);
+  assert.deepEqual(parsePorts(''), [80]);
+  assert.deepEqual(parsePorts(null), [80]);
+});
+
+test('proxy forwards /panel, PATCH /api/ and multiplexes /v2ray without breaking SSH WS', async (t) => {
+  const mockApi = net.createServer((sock) => {
+    sock.on('data', (d) => {
+      const text = d.toString();
+      if (text.startsWith('GET /panel/login.html')) {
+        sock.write('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<title>JOIF Panel</title>');
+      } else if (text.startsWith('PATCH /api/users/joif01')) {
+        sock.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"updated":true}');
+      }
+    });
+  });
+
+  const mockV2 = net.createServer((sock) => {
+    sock.on('data', (d) => {
+      if (d.toString().startsWith('GET /v2ray')) {
+        sock.write('HTTP/1.1 101 Switching Protocols\r\nX-Backend: V2Ray\r\n\r\n');
+      }
+    });
+  });
+
+  const apiPort = await new Promise((res) => mockApi.listen(0, '127.0.0.1', () => res(mockApi.address().port)));
+  const v2rayPort = await new Promise((res) => mockV2.listen(0, '127.0.0.1', () => res(mockV2.address().port)));
+  const proxy = createProxyServer({ apiPort, sshPort: 22, v2rayPort, v2rayPath: '/v2ray' });
+  const proxyPort = await new Promise((res) => proxy.listen(0, '127.0.0.1', () => res(proxy.address().port)));
+
+  t.after(() => {
+    proxy.close();
+    mockApi.close();
+    mockV2.close();
+  });
+
+  const sendReq = (raw, expectStr) => new Promise((resolve, reject) => {
+    const c = net.createConnection({ port: proxyPort, host: '127.0.0.1' });
+    let out = '';
+    c.on('error', reject);
+    c.on('connect', () => c.write(raw));
+    c.on('data', (chunk) => {
+      out += chunk.toString();
+      if (out.includes(expectStr)) { c.destroy(); resolve(out); }
+    });
+  });
+
+  const panelResp = await sendReq('GET /panel/login.html HTTP/1.1\r\nHost: localhost\r\n\r\n', 'JOIF Panel');
+  assert.ok(panelResp.includes('JOIF Panel'));
+
+  const patchResp = await sendReq('PATCH /api/users/joif01 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n\r\n{}', '"updated":true');
+  assert.ok(patchResp.includes('"updated":true'));
+
+  const v2Resp = await sendReq('GET /v2ray HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n', 'X-Backend: V2Ray');
+  assert.ok(v2Resp.includes('X-Backend: V2Ray'));
 });

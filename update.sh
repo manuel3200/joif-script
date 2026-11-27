@@ -39,6 +39,7 @@ if [ "$SUCCESS" = "1" ]; then
     ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/joif-bbr
     ln -sf /root/joif-core/modules/system/network_tuning.sh /usr/bin/bbr
     ln -sf /root/joif-core/modules/network/smartdns_client.sh /usr/local/bin/joif-smartdns
+    ln -sf /root/joif-core/modules/network/firewall_manager.sh /usr/local/bin/joif-firewall
     hash -r
 
     # Limpiar servicio duplicado heredado si existía
@@ -55,6 +56,10 @@ if [ "$SUCCESS" = "1" ]; then
     systemctl is-active --quiet joif-limitador && systemctl restart joif-limitador 2>/dev/null || true
     systemctl is-active --quiet badvpn-7300 && systemctl restart badvpn-7300 2>/dev/null || true
     systemctl is-active --quiet badvpn-7200 && systemctl restart badvpn-7200 2>/dev/null || true
+    systemctl is-active --quiet joif-smartdns-watchdog && systemctl restart joif-smartdns-watchdog 2>/dev/null || true
+    if [ -f /etc/joif-firewall.conf ]; then
+        bash /root/joif-core/modules/network/firewall_manager.sh --apply >/dev/null 2>&1 || true
+    fi
 
     echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo -e " \033[1;32m✔ Actualización aplicada correctamente.\033[0m"

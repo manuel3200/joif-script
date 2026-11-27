@@ -33,6 +33,8 @@ menu_herramientas() {
             local sd_ip
             sd_ip=$(grep -m1 '^SMARTDNS_IP=' /etc/joif-smartdns-client.conf 2>/dev/null | cut -d'=' -f2- | tr -d '"\r\n')
             smartdns_badge="${green}[ON:${sd_ip:-AR}]${plain}"
+        elif grep -q '^ENABLED="1"' /etc/joif-smartdns-client.conf 2>/dev/null; then
+            smartdns_badge="${yellow}[FAILOVER]${plain}"
         fi
         local bbr_badge="${yellow}[STD]${plain}"
         sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -qx 'bbr' && bbr_badge="${green}[BBR]${plain}"

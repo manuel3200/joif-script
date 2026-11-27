@@ -8,6 +8,23 @@ const PROXY_PORT = Number(process.env.PROXY_PORT) || 80;
 const SSH_PORT = Number(process.env.SSH_PORT) || 22;
 const ALLOWED_TARGET_PORTS = new Set([22, 143, 7300, SSH_PORT]);
 
+function parsePorts(input, fallback = [80]) {
+  if (Array.isArray(input)) {
+    const clean = [...new Set(input.map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
+    return clean.length > 0 ? clean : fallback;
+  }
+  if (typeof input === 'number' && Number.isInteger(input) && input > 0 && input < 65536) {
+    return [input];
+  }
+  if (typeof input === 'string' && input.trim()) {
+    const clean = [...new Set(
+      input.split(/[\s,]+/).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536)
+    )];
+    return clean.length > 0 ? clean : fallback;
+  }
+  return fallback;
+}
+
 const RESPONSE_101 = Buffer.from(
   'HTTP/1.1 101 Switching Protocols\r\n' +
   'Upgrade: websocket\r\n' +
@@ -41,6 +58,9 @@ function createProxyServer(options = {}) {
   const listenPort = options.proxyPort || PROXY_PORT;
   const defaultSshPort = options.sshPort || SSH_PORT;
   const apiPort = options.apiPort || Number(process.env.PORT) || 3000;
+  const v2rayPort = Number(options.v2rayPort ?? process.env.V2RAY_PORT) || 0;
+  const rawV2Path = String(options.v2rayPath || process.env.V2RAY_PATH || '/v2ray').trim();
+  const v2rayPath = rawV2Path.startsWith('/') ? rawV2Path : '/' + rawV2Path;
 
   const server = net.createServer((clientSocket) => {
     // 1. Optimización para latencia cero en juegos (Desactivar Nagle)
@@ -86,9 +106,9 @@ function createProxyServer(options = {}) {
       const headerText = buffer.subarray(0, headerEnd).toString('latin1');
       const remainingBytes = buffer.subarray(headerEnd + delimiterLength);
 
-      // Si es una petición HTTP a la API o CheckUser, reenviar al backend Node.js (3000)
+      // Si es una petición HTTP a la API, CheckUser o Panel Web (/panel), reenviar al backend Node.js (3000)
       const firstLine = headerText.split(/\r?\n/)[0] || '';
-      if (/^(GET|POST|PUT|DELETE|OPTIONS|HEAD)\s+(\/api\/|\/check|\/health)/i.test(firstLine)) {
+      if (/^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\/api\/|\/check|\/health|\/panel(?:\/|\?|\s|$))/i.test(firstLine)) {
         const apiSocket = net.createConnection({ port: apiPort, host: '127.0.0.1' }, () => {
           apiSocket.write(buffer);
           clientSocket.pipe(apiSocket);
@@ -104,6 +124,30 @@ function createProxyServer(options = {}) {
           try { apiSocket.destroy(); } catch (_) {}
         });
         return;
+      }
+
+      // Multiplexado opcional V2Ray / Xray WebSocket por ruta (ej. GET /v2ray HTTP/1.1 -> 127.0.0.1:V2RAY_PORT)
+      if (v2rayPort > 0 && v2rayPort < 65536) {
+        const reqPath = (firstLine.split(/\s+/)[1] || '').split('?')[0];
+        if (reqPath === v2rayPath || reqPath.startsWith(v2rayPath + '/')) {
+          const v2Socket = net.createConnection({ port: v2rayPort, host: '127.0.0.1' }, () => {
+            v2Socket.setNoDelay(true);
+            v2Socket.setKeepAlive(true, 15000);
+            v2Socket.write(buffer);
+            clientSocket.pipe(v2Socket);
+            v2Socket.pipe(clientSocket);
+          });
+          v2Socket.on('error', () => {
+            try {
+              clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBackend V2Ray local inalcanzable.\r\n');
+              clientSocket.destroy();
+            } catch (_) {}
+          });
+          clientSocket.on('error', () => { try { v2Socket.destroy(); } catch (_) {} });
+          v2Socket.on('close', () => clientSocket.destroy());
+          clientSocket.on('close', () => v2Socket.destroy());
+          return;
+        }
       }
 
       // 3. Extraer cabeceras relevantes
@@ -188,41 +232,63 @@ function createProxyServer(options = {}) {
 
 function parseCliArgs() {
   const args = process.argv.slice(2);
-  let proxyPort = Number(process.env.PROXY_PORT) || 80;
+  let proxyPorts = parsePorts(process.env.PROXY_PORTS || process.env.PROXY_PORT, [80]);
   let sshPort = Number(process.env.SSH_PORT) || 22;
+  let v2rayPort = Number(process.env.V2RAY_PORT) || 0;
+  let v2rayPath = process.env.V2RAY_PATH || '/v2ray';
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '-p' || arg === '--port') {
-      const val = Number(args[++i]);
-      if (val > 0 && val < 65536) proxyPort = val;
+    if (arg === '-p' || arg === '--port' || arg === '--ports') {
+      proxyPorts = parsePorts(args[++i], proxyPorts);
     } else if (arg === '-s' || arg === '--ssh' || arg === '--target') {
       const val = Number(args[++i]);
       if (val > 0 && val < 65536) sshPort = val;
-    } else if (/^\d+$/.test(arg)) {
-      proxyPort = Number(arg);
+    } else if (arg === '--v2ray-port') {
+      const val = Number(args[++i]);
+      if (val >= 0 && val < 65536) v2rayPort = val;
+    } else if (arg === '--v2ray-path') {
+      if (args[i + 1]) v2rayPath = args[++i];
+    } else if (/^\d+(?:,\d+)*$/.test(arg)) {
+      proxyPorts = parsePorts(arg, proxyPorts);
     }
   }
-  return { proxyPort, sshPort };
+  return { proxyPort: proxyPorts[0], proxyPorts, sshPort, v2rayPort, v2rayPath };
 }
 
 if (require.main === module) {
-  const { proxyPort, sshPort } = parseCliArgs();
-  const server = createProxyServer({ proxyPort, sshPort });
-  server.on('error', (err) => {
-    console.error(`❌ [PROXY-NODE] Error en el servidor proxy (Puerto ${proxyPort}):`, err.message);
-    process.exit(1);
-  });
-  server.listen(proxyPort, '0.0.0.0', () => {
-    console.log(`🚀 [PROXY-NODE] WebSocket Proxy activo en 0.0.0.0:${proxyPort}`);
-    console.log(`➡️ [PROXY-NODE] Reenvío optimizado a 127.0.0.1:${sshPort} (Zero-Latency / KeepAlive activo)`);
-  });
+  const { proxyPorts, sshPort, v2rayPort, v2rayPath } = parseCliArgs();
+  const servers = [];
+
+  for (const port of proxyPorts) {
+    const server = createProxyServer({ proxyPort: port, sshPort, v2rayPort, v2rayPath });
+    server.on('error', (err) => {
+      console.error(`❌ [PROXY-NODE] Error en el servidor proxy (Puerto ${port}):`, err.message);
+      process.exit(1);
+    });
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 [PROXY-NODE] WebSocket Proxy activo en 0.0.0.0:${port}`);
+    });
+    servers.push(server);
+  }
+
+  console.log(`➡️ [PROXY-NODE] SSH -> 127.0.0.1:${sshPort} | Panel -> /panel | Puertos: ${proxyPorts.join(', ')}`);
+  if (v2rayPort > 0) {
+    console.log(`➡️ [PROXY-NODE] Multiplexado V2Ray/Xray activo: ${v2rayPath} -> 127.0.0.1:${v2rayPort}`);
+  }
 
   const shutdown = () => {
-    server.close(() => process.exit(0));
+    let remaining = servers.length;
+    if (remaining === 0) return process.exit(0);
+    for (const s of servers) {
+      s.close(() => {
+        remaining--;
+        if (remaining <= 0) process.exit(0);
+      });
+    }
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
 
-module.exports = { createProxyServer, parseTarget, RESPONSE_101 };
+module.exports = { createProxyServer, parseTarget, parsePorts, RESPONSE_101 };

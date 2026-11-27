@@ -38,14 +38,15 @@ if [[ "$purge_users" =~ ^[SsYy]$ ]] && [ -f /root/joif-core/database.sqlite ]; t
 fi
 
 echo -e "\n${blue}[1/4] Deteniendo y eliminando servicios systemd...${plain}"
-for svc in joif joif-proxy joif-limitador joif-api joif-smartdns-client badvpn-dual badvpn badvpn-7300 badvpn-7200; do
+for svc in joif joif-proxy joif-limitador joif-api joif-smartdns-client joif-smartdns-watchdog joif-firewall badvpn-dual badvpn badvpn-7300 badvpn-7200; do
     systemctl stop "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true
     rm -f "/etc/systemd/system/${svc}.service"
 done
 systemctl daemon-reload
 
-echo -e "${blue}[2/4] Limpiando reglas SmartDNS, sysctl y configs drop-in SSH...${plain}"
+echo -e "${blue}[2/4] Limpiando reglas SmartDNS, Firewall, sysctl y configs drop-in SSH...${plain}"
+bash /root/joif-core/modules/network/firewall_manager.sh --disable-all >/dev/null 2>&1 || true
 while iptables -t nat -C OUTPUT -j JOIF_SMARTDNS_OUT >/dev/null 2>&1; do
     iptables -t nat -D OUTPUT -j JOIF_SMARTDNS_OUT 2>/dev/null || break
 done
@@ -53,12 +54,13 @@ iptables -t nat -F JOIF_SMARTDNS_OUT 2>/dev/null || true
 iptables -t nat -X JOIF_SMARTDNS_OUT 2>/dev/null || true
 persist_firewall
 
-rm -f /etc/joif-smartdns-client.conf /etc/sysctl.d/99-vpn-tuning.conf /etc/sysctl.d/98-joif-swap.conf
+rm -f /etc/joif-smartdns-client.conf /etc/joif-firewall.conf /var/log/joif-smartdns-failover.log /run/joif-smartdns-state
+rm -f /etc/sysctl.d/99-vpn-tuning.conf /etc/sysctl.d/98-joif-swap.conf
 rm -f /etc/ssh/sshd_config.d/99-vpn-speed.conf /etc/ssh/sshd_config.d/95-joif-banner.conf
 safe_reload_ssh 2>/dev/null || true
 
 echo -e "${blue}[3/4] Eliminando comandos de terminal y autoinicio...${plain}"
-rm -f /usr/bin/menu /usr/local/bin/menu /bin/menu /usr/bin/joif-update /usr/bin/joif-bbr /usr/bin/bbr /usr/local/bin/joif-smartdns /bin/JOIF-badvpn
+rm -f /usr/bin/menu /usr/local/bin/menu /bin/menu /usr/bin/joif-update /usr/bin/joif-bbr /usr/bin/bbr /usr/local/bin/joif-smartdns /usr/local/bin/joif-firewall /bin/JOIF-badvpn
 sed -i '/alias menu=/d;\|/usr/bin/menu|d' /root/.bashrc 2>/dev/null || true
 
 echo -e "${blue}[4/4] Removiendo directorio /root/joif-core...${plain}"
