@@ -437,9 +437,34 @@ app.get('/api/system/status', authMiddleware, async (req, res) => {
   }
 });
 
-// Healthcheck del backend y API CheckUser
-app.get(['/health', '/api/health'], (req, res) => {
-  res.json({ status: 'ok', service: 'joif-checkuser', port: Number(process.env.PORT || 3000) });
+// Healthcheck público extendido (con caché de 5s para soportar cientos de pings simultáneos)
+let healthCache = { at: 0, online: 0, smartdnsAr: false };
+app.get(['/health', '/api/health'], async (req, res) => {
+  const maxCapacity = Math.max(1, Number(process.env.NODE_CAPACITY) || 100);
+  if (process.platform === 'linux' && Date.now() - healthCache.at > 5000) {
+    let online = 0, smartdnsAr = false;
+    try {
+      const psOut = await security.run('ps', ['-eo', 'user:32,pid,etimes,args']);
+      online = typeof security.sessionPids === 'function' ? security.sessionPids(psOut).length : 0;
+    } catch (_) {}
+    try {
+      await security.run('iptables', ['-t', 'nat', '-C', 'OUTPUT', '-j', 'JOIF_SMARTDNS_OUT']);
+      smartdnsAr = true;
+    } catch (_) {}
+    healthCache = { at: Date.now(), online, smartdnsAr };
+  }
+  const loadPercent = Math.min(100, Math.round((healthCache.online / maxCapacity) * 100));
+  const loadLevel = loadPercent >= 85 ? 'high' : loadPercent >= 60 ? 'medium' : 'low';
+  res.json({
+    status: 'ok',
+    service: 'joif-checkuser',
+    port: Number(process.env.PORT || 3000),
+    online_connections: healthCache.online,
+    max_capacity: maxCapacity,
+    load_percent: loadPercent,
+    load_level: loadLevel,
+    smartdns_ar: healthCache.smartdnsAr
+  });
 });
 
 // Obtener todos los usuarios array simple (CheckUser Global - Protegido para evitar enumeración pública)
