@@ -38,6 +38,8 @@ menu_herramientas() {
         fi
         local bbr_badge="${yellow}[STD]${plain}"
         sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -qx 'bbr' && bbr_badge="${green}[BBR]${plain}"
+        local tg_badge="${red}[OFF]${plain}"
+        systemctl is-active --quiet joif-telegram 2>/dev/null && tg_badge="${green}[ON]${plain}"
 
         echo -e "  ${yellow}HERRAMIENTAS Y OPTIMIZACIÓN DEL SISTEMA${plain}"
         ui_subline
@@ -48,6 +50,7 @@ menu_herramientas() {
         echo -e "  ${green}[5]${plain} Optimización TCP BBR + OpenSSH      ${bbr_badge}"
         echo -e "  ${green}[6]${plain} Smart DNS Cliente (Bypass AR)       ${smartdns_badge}"
         echo -e "  ${green}[7]${plain} Backup y restauración de cuentas"
+        echo -e "  ${green}[8]${plain} Bot de Telegram [Alfa]              ${tg_badge}"
         echo -e "  ${red}[0]${plain} Volver al menú principal"
         ui_line
         read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_t
@@ -79,6 +82,7 @@ menu_herramientas() {
             5) run_module "modules/system/network_tuning.sh" ;;
             6) run_module "modules/network/smartdns_client.sh" ;;
             7) run_module "modules/tools/backup_manager.sh" ;;
+            8) run_module "modules/tools/telegram_manager.sh" ;;
             0|00) break ;;
             *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
         esac

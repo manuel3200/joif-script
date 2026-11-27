@@ -44,6 +44,9 @@ crear_usuario() {
             u_days="${u_days:-30}"
             read -r -p "$(echo -e "${white}Límite de conexiones [1]: ${plain}")" u_lim
             u_lim="${u_lim:-1}"
+            read -r -p "$(echo -e "${white}Límite de datos en GB [Enter = 0 Ilimitado]: ${plain}")" u_gb
+            u_gb="${u_gb:-0}"
+            [[ ! "$u_gb" =~ ^[0-9]+([.][0-9]+)?$ ]] && u_gb="0"
 
             local exp_iso
             exp_iso=$(date -d "+${u_days} days" --iso-8601=seconds)
@@ -55,13 +58,17 @@ crear_usuario() {
                 --arg password "$u_pass" \
                 --arg expiration_date "$exp_iso" \
                 --argjson max_connections "$u_lim" \
-                '{username:$username, password:$password, expiration_date:$expiration_date, max_connections:$max_connections}')
+                --argjson data_limit_gb "$u_gb" \
+                '{username:$username, password:$password, expiration_date:$expiration_date, max_connections:$max_connections, data_limit_gb:$data_limit_gb}')
             ;;
         2)
             read -r -p "$(echo -e "${white}Sufijo del demo (ej. juan -> demo-juan): ${plain}")" d_suf
             d_suf=$(echo "$d_suf" | tr -d '[:space:]')
             [ -z "$d_suf" ] && d_suf="$(date +%H%M%S)"
             [[ "$d_suf" != demo-* ]] && d_suf="demo-${d_suf}"
+            read -r -p "$(echo -e "${white}Límite de datos en GB [Enter = 0 Ilimitado]: ${plain}")" u_gb
+            u_gb="${u_gb:-0}"
+            [[ ! "$u_gb" =~ ^[0-9]+([.][0-9]+)?$ ]] && u_gb="0"
 
             local d_pass exp_iso
             d_pass=$(openssl rand -hex 4 2>/dev/null || echo "demo$(date +%M%S)")
@@ -73,7 +80,8 @@ crear_usuario() {
                 --arg username "$d_suf" \
                 --arg password "$d_pass" \
                 --arg expiration_date "$exp_iso" \
-                '{username:$username, password:$password, expiration_date:$expiration_date, max_connections:2}')
+                --argjson data_limit_gb "$u_gb" \
+                '{username:$username, password:$password, expiration_date:$expiration_date, max_connections:2, data_limit_gb:$data_limit_gb}')
             ;;
         3)
             read -r -p "$(echo -e "${white}Alias / Nombre del cliente: ${plain}")" c_alias
@@ -86,6 +94,9 @@ crear_usuario() {
 
             read -r -p "$(echo -e "${white}Días de vigencia [30]: ${plain}")" u_days
             u_days="${u_days:-30}"
+            read -r -p "$(echo -e "${white}Límite de datos en GB [Enter = 0 Ilimitado]: ${plain}")" u_gb
+            u_gb="${u_gb:-0}"
+            [[ ! "$u_gb" =~ ^[0-9]+([.][0-9]+)?$ ]] && u_gb="0"
             local exp_iso
             exp_iso=$(date -d "+${u_days} days" --iso-8601=seconds)
             summary_exp=$(date -d "+${u_days} days" +"%d/%m/%Y")
@@ -95,7 +106,8 @@ crear_usuario() {
                 --arg hwid "$c_hwid" \
                 --arg alias "$c_alias" \
                 --arg expiration_date "$exp_iso" \
-                '{hwid:$hwid, alias:$alias, expiration_date:$expiration_date, max_connections:1}')
+                --argjson data_limit_gb "$u_gb" \
+                '{hwid:$hwid, alias:$alias, expiration_date:$expiration_date, max_connections:1, data_limit_gb:$data_limit_gb}')
             ;;
         *)
             echo -e "${red}Opción inválida.${plain}"; sleep 1; return
@@ -611,6 +623,23 @@ EOF
     done
 }
 
+purgar_demos_vencidas() {
+    ui_title "PURGA DE CUENTAS DEMO VENCIDAS"
+    echo -e "  ${gray}Las demos vencidas se purgan automáticamente 24h después de expirar.${plain}"
+    echo -e "  ${white}¿Deseas eliminar AHORA todas las cuentas Demo ya vencidas?${plain}\n"
+    read -r -p "$(echo -e "  ${yellow}Confirmar purga inmediata [s/N]: ${plain}")" cf
+    [[ ! "$cf" =~ ^[SsYy]$ ]] && return
+    joif_api_call "POST" "/api/users/purge-demos" '{"grace_hours":0}'
+    if [ "$JOIF_API_CODE" = "200" ]; then
+        local msg
+        msg=$(echo "$JOIF_API_BODY" | jq -r '.message // "Purga completada."' 2>/dev/null)
+        echo -e "\n  ${green}✔ ${msg}${plain}"
+    else
+        echo -e "\n  ${red}✖ Error HTTP ${JOIF_API_CODE}: ${JOIF_API_BODY}${plain}"
+    fi
+    pause
+}
+
 # Bucle principal del Módulo de Usuarios
 while true; do
     draw_header
@@ -622,16 +651,17 @@ while true; do
 
     echo -e "  ${yellow}GESTIÓN DE USUARIOS (SSH / HWID / CHECKUSER)${plain}"
     ui_subline
-    echo -e "  ${green}[1]${plain} Crear usuario (SSH / Demo / HWID / Token)"
-    echo -e "  ${green}[2]${plain} Listar usuarios registrados (con tráfico MB/GB)"
-    echo -e "  ${green}[3]${plain} Editar / Renovar / Cambiar clave o HWID"
-    echo -e "  ${green}[4]${plain} Bloquear / Desbloquear usuario"
-    echo -e "  ${green}[5]${plain} Eliminar usuario(s)"
-    echo -e "  ${green}[6]${plain} Monitor de usuarios conectados en vivo"
-    echo -e "  ${green}[7]${plain} Banner SSH estático (/etc/issue.net)"
-    echo -e "  ${green}[8]${plain} Control Multilogin Auto-Killer      ${ml_badge}"
-    echo -e "  ${green}[9]${plain} API CheckUser y Seguridad Web       ${cu_badge}"
-    echo -e "  ${red}[0]${plain} Volver al menú principal"
+    echo -e "  ${green}[1]${plain}  Crear usuario (SSH / Demo / HWID / Token)"
+    echo -e "  ${green}[2]${plain}  Listar usuarios registrados (con tráfico MB/GB)"
+    echo -e "  ${green}[3]${plain}  Editar / Renovar / Cambiar clave o HWID"
+    echo -e "  ${green}[4]${plain}  Bloquear / Desbloquear usuario"
+    echo -e "  ${green}[5]${plain}  Eliminar usuario(s)"
+    echo -e "  ${green}[6]${plain}  Monitor de usuarios conectados en vivo"
+    echo -e "  ${green}[7]${plain}  Banner SSH estático (/etc/issue.net)"
+    echo -e "  ${green}[8]${plain}  Control Multilogin Inteligente     ${ml_badge}"
+    echo -e "  ${green}[9]${plain}  API CheckUser y Seguridad Web      ${cu_badge}"
+    echo -e "  ${green}[10]${plain} Purgar cuentas Demo vencidas ahora"
+    echo -e "  ${red}[0]${plain}  Volver al menú principal"
     ui_line
     read -r -p "$(echo -e "${white}Selecciona una opción: ${plain}")" opt_u
 
@@ -645,6 +675,7 @@ while true; do
         7) gestionar_banner_estatico ;;
         8) gestionar_multilogin ;;
         9) gestionar_checkuser_y_seguridad ;;
+        10) purgar_demos_vencidas ;;
         0|00) break ;;
         *) echo -e "  ${red}Opción inválida.${plain}"; sleep 1 ;;
     esac

@@ -57,6 +57,7 @@ if [ "$SUCCESS" = "1" ]; then
     systemctl is-active --quiet badvpn-7300 && systemctl restart badvpn-7300 2>/dev/null || true
     systemctl is-active --quiet badvpn-7200 && systemctl restart badvpn-7200 2>/dev/null || true
     systemctl is-active --quiet joif-smartdns-watchdog && systemctl restart joif-smartdns-watchdog 2>/dev/null || true
+    systemctl is-active --quiet joif-telegram && systemctl restart joif-telegram 2>/dev/null || true
     if [ -f /etc/joif-firewall.conf ]; then
         bash /root/joif-core/modules/network/firewall_manager.sh --apply >/dev/null 2>&1 || true
     fi

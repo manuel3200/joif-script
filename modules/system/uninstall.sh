@@ -38,7 +38,7 @@ if [[ "$purge_users" =~ ^[SsYy]$ ]] && [ -f /root/joif-core/database.sqlite ]; t
 fi
 
 echo -e "\n${blue}[1/4] Deteniendo y eliminando servicios systemd...${plain}"
-for svc in joif joif-proxy joif-limitador joif-api joif-smartdns-client joif-smartdns-watchdog joif-firewall badvpn-dual badvpn badvpn-7300 badvpn-7200; do
+for svc in joif joif-proxy joif-limitador joif-api joif-smartdns-client joif-smartdns-watchdog joif-firewall joif-telegram badvpn-dual badvpn badvpn-7300 badvpn-7200; do
     systemctl stop "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true
     rm -f "/etc/systemd/system/${svc}.service"

@@ -15,6 +15,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     db.run('PRAGMA synchronous = NORMAL;');
     db.run('ALTER TABLE users ADD COLUMN alias TEXT;', () => {});
     db.run('ALTER TABLE users ADD COLUMN bytes_used INTEGER DEFAULT 0;', () => {});
+    db.run('ALTER TABLE users ADD COLUMN data_limit_bytes INTEGER DEFAULT 0;', () => {});
   }
 });
 
@@ -52,6 +53,7 @@ const initDB = async () => {
           expiration_date TEXT NOT NULL,
           max_connections INTEGER DEFAULT 1,
           bytes_used INTEGER DEFAULT 0,
+          data_limit_bytes INTEGER DEFAULT 0,
           status TEXT DEFAULT 'active',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )

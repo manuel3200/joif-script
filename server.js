@@ -123,7 +123,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
     if (trafficCollector) {
       try { await trafficCollector.flushToDb(db); } catch (_) {}
     }
-    const result = await db.query('SELECT id, username, expiration_date, hwid, alias, max_connections, COALESCE(bytes_used, 0) AS bytes_used, status, created_at FROM users');
+    const result = await db.query('SELECT id, username, expiration_date, hwid, alias, max_connections, COALESCE(bytes_used, 0) AS bytes_used, COALESCE(data_limit_bytes, 0) AS data_limit_bytes, status, created_at FROM users');
     let sessionMap = new Map();
     if (process.platform === 'linux' && typeof security.allSessions === 'function') {
       try {
@@ -133,10 +133,13 @@ app.get('/api/users', authMiddleware, async (req, res) => {
     const enriched = result.rows.map(row => {
       const live = sessionMap.get(String(row.username || '').toLowerCase()) || { count: 0, time: '00:00:00' };
       const bytes = Number(row.bytes_used) > 0 ? Number(row.bytes_used) : 0;
+      const limitBytes = Number(row.data_limit_bytes) > 0 ? Number(row.data_limit_bytes) : 0;
       return {
         ...row,
         bytes_used: bytes,
+        data_limit_bytes: limitBytes,
         gb_used: typeof security.formatTrafficBytes === 'function' ? security.formatTrafficBytes(bytes) : '0.00 MB',
+        limit_data: typeof security.formatDataLimit === 'function' ? security.formatDataLimit(limitBytes) : 'Ilimitado',
         active_connections: live.count,
         time_online: live.time
       };
@@ -149,8 +152,11 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 
 // Crear usuario (Registra en DB y ejecuta comando en Linux)
 app.post('/api/users', authMiddleware, async (req, res) => {
-  let account;
-  try { account = security.validateAccount(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
+  let account, dataLimitBytes = 0;
+  try {
+    account = security.validateAccount(req.body);
+    dataLimitBytes = typeof security.parseDataLimitBytes === 'function' ? security.parseDataLimitBytes(req.body) : 0;
+  } catch (e) { return res.status(400).json({ error: e.message }); }
   let created = false;
   try {
     const exists = await db.query('SELECT id FROM users WHERE username = ? OR (hwid IS NOT NULL AND hwid = ?)', [account.username, account.hwid || account.username]);
@@ -174,8 +180,11 @@ app.post('/api/users', authMiddleware, async (req, res) => {
       await security.run('sudo', ['-n', 'chpasswd'], account.nativeName + ':' + account.password + '\n');
       await security.run('sudo', ['-n', 'chage', '-E', account.date, '--', account.nativeName]);
     }
-    const result = await db.query('INSERT INTO users (username, password, expiration_date, max_connections, hwid, alias) VALUES (?, ?, ?, ?, ?, ?)', [account.username, account.password, account.expiresAt, account.connections, account.hwid, account.alias]);
-    res.status(201).json({ message: 'Usuario creado con éxito', id: result.lastID, username: account.username, alias: account.alias });
+    const result = await db.query(
+      'INSERT INTO users (username, password, expiration_date, max_connections, hwid, alias, data_limit_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [account.username, account.password, account.expiresAt, account.connections, account.hwid, account.alias, dataLimitBytes]
+    );
+    res.status(201).json({ message: 'Usuario creado con éxito', id: result.lastID, username: account.username, alias: account.alias, data_limit_bytes: dataLimitBytes });
   } catch (e) {
     if (created) { try { await security.run('sudo', ['-n', 'userdel', '-f', '--', account.nativeName]); } catch (_) { console.error('Requiere reconciliar cuenta Linux después de un alta fallida.'); } }
     res.status(500).json({ error: 'No se pudo crear la cuenta: ' + (e.message || 'Revisa los registros del servidor.') });
@@ -255,7 +264,7 @@ app.post('/api/users/:username/unlock', authMiddleware, async (req, res) => {
 const handlePatchUser = async (req, res) => {
   try {
     const target = req.params.username;
-    const result = await db.query('SELECT id, username, password, hwid, alias, expiration_date, max_connections, status FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1', [target, target, target]);
+    const result = await db.query('SELECT id, username, password, hwid, alias, expiration_date, max_connections, status, COALESCE(bytes_used, 0) AS bytes_used, COALESCE(data_limit_bytes, 0) AS data_limit_bytes FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1', [target, target, target]);
     if (!result.rowCount) return res.status(404).json({ error: 'Usuario no encontrado.' });
     const row = result.rows[0];
     let patch;
@@ -268,6 +277,8 @@ const handlePatchUser = async (req, res) => {
     let nextAlias = patch.alias !== undefined ? patch.alias : row.alias;
     let nextMax = patch.max_connections !== undefined ? patch.max_connections : row.max_connections;
     let nextExp = patch.expiresAt !== undefined ? patch.expiresAt : row.expiration_date;
+    let nextLimitBytes = patch.data_limit_bytes !== undefined ? patch.data_limit_bytes : (Number(row.data_limit_bytes) || 0);
+    let nextBytesUsed = patch.reset_traffic ? 0 : (Number(row.bytes_used) || 0);
     let nextStatus = row.status;
 
     if (patch.hwid && patch.hwid !== row.username) {
@@ -289,22 +300,27 @@ const handlePatchUser = async (req, res) => {
       nextPassword = patch.password;
     }
 
-    if (patch.expiresAt !== undefined) {
+    const quotaOkNow = nextLimitBytes === 0 || nextBytesUsed < nextLimitBytes;
+    const dateFutureNow = Number.isFinite(Date.parse(nextExp)) && Date.parse(nextExp) > Date.now();
+    const shouldUnlock = (patch.expiresAt !== undefined && patch.isFuture) || (row.status === 'quota_exhausted' && quotaOkNow && dateFutureNow);
+
+    if (patch.expiresAt !== undefined || shouldUnlock) {
       if (process.platform === 'linux') {
-        await security.run('sudo', ['-n', 'chage', '-E', patch.chageDate, '--', currentNative]);
-        if (patch.isFuture) {
+        const chageDate = patch.chageDate || new Date(Math.ceil(Date.parse(nextExp) / 86400000) * 86400000).toISOString().slice(0, 10);
+        await security.run('sudo', ['-n', 'chage', '-E', chageDate, '--', currentNative]);
+        if (shouldUnlock) {
           await security.run('sudo', ['-n', 'usermod', '-U', '--', currentNative]);
         }
       }
-      if (patch.isFuture && row.status !== 'active') {
+      if (shouldUnlock && row.status !== 'active') {
         nextStatus = 'active';
       }
     }
 
-    const sql = patch.reset_traffic
-      ? 'UPDATE users SET username = ?, password = ?, hwid = ?, alias = ?, max_connections = ?, expiration_date = ?, status = ?, bytes_used = 0 WHERE id = ?'
-      : 'UPDATE users SET username = ?, password = ?, hwid = ?, alias = ?, max_connections = ?, expiration_date = ?, status = ? WHERE id = ?';
-    await db.query(sql, [nextUsername, nextPassword, nextHwid, nextAlias, nextMax, nextExp, nextStatus, row.id]);
+    await db.query(
+      'UPDATE users SET username = ?, password = ?, hwid = ?, alias = ?, max_connections = ?, expiration_date = ?, status = ?, bytes_used = ?, data_limit_bytes = ? WHERE id = ?',
+      [nextUsername, nextPassword, nextHwid, nextAlias, nextMax, nextExp, nextStatus, nextBytesUsed, nextLimitBytes, row.id]
+    );
 
     res.json({
       message: 'Cuenta actualizada con éxito.',
@@ -315,6 +331,7 @@ const handlePatchUser = async (req, res) => {
         alias: nextAlias,
         max_connections: nextMax,
         expiration_date: nextExp,
+        data_limit_bytes: nextLimitBytes,
         status: nextStatus
       }
     });
@@ -322,6 +339,22 @@ const handlePatchUser = async (req, res) => {
 };
 if (typeof app.patch === 'function') app.patch('/api/users/:username', authMiddleware, handlePatchUser);
 app.post('/api/users/:username/update', authMiddleware, handlePatchUser);
+
+// Purga manual de cuentas Demo vencidas (24h por defecto, o grace_hours=0 para limpiar todas las vencidas ahora)
+app.post('/api/users/purge-demos', authMiddleware, async (req, res) => {
+  try {
+    const reconciler = require('./account-reconciler');
+    if (typeof reconciler.purgeExpiredDemos !== 'function') {
+      return res.status(501).json({ error: 'Purga de demos no disponible.' });
+    }
+    const rawHours = req.body && req.body.grace_hours !== undefined ? Number(req.body.grace_hours) : 24;
+    const graceHours = Number.isFinite(rawHours) && rawHours >= 0 ? rawHours : 24;
+    const summary = await reconciler.purgeExpiredDemos(db, security.run, Date.now(), graceHours * 60 * 60 * 1000);
+    res.json({ message: `Purga completada: ${summary.purged} cuentas Demo eliminadas.`, ...summary });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'No se pudo purgar las demos.' });
+  }
+});
 
 // Telemetría real y estado de servicios del nodo (para Panel Web y monitoreo)
 app.get('/api/system/status', authMiddleware, async (req, res) => {
@@ -439,7 +472,7 @@ async function handleCheckUser(id, req, res) {
       try { await trafficCollector.flushToDb(db); } catch (_) {}
     }
     const userRes = await db.query(
-      'SELECT username, hwid, alias, expiration_date, max_connections, status, COALESCE(bytes_used, 0) AS bytes_used FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1',
+      'SELECT username, hwid, alias, expiration_date, max_connections, status, COALESCE(bytes_used, 0) AS bytes_used, COALESCE(data_limit_bytes, 0) AS data_limit_bytes FROM users WHERE username = ? COLLATE NOCASE OR hwid = ? COLLATE NOCASE OR alias = ? COLLATE NOCASE LIMIT 1',
       [target, target, target]
     );
     if (userRes.rowCount === 0) {
@@ -447,6 +480,23 @@ async function handleCheckUser(id, req, res) {
     }
 
     const user = userRes.rows[0];
+    const bytesUsed = Number(user.bytes_used) > 0 ? Number(user.bytes_used) : 0;
+    const limitBytes = Number(user.data_limit_bytes) > 0 ? Number(user.data_limit_bytes) : 0;
+    const formattedUsage = typeof security.formatTrafficBytes === 'function' ? security.formatTrafficBytes(bytesUsed) : '0.00 MB';
+    const formattedLimit = typeof security.formatDataLimit === 'function' ? security.formatDataLimit(limitBytes) : 'Ilimitado';
+
+    if (user.status === 'quota_exhausted' || (limitBytes > 0 && bytesUsed >= limitBytes)) {
+      return res.status(403).json({
+        error: 'Cuota de datos agotada',
+        status: 'quota_exhausted',
+        username: user.username,
+        bytes_used: bytesUsed,
+        limit_bytes: limitBytes,
+        gb_used: formattedUsage,
+        limit_data: formattedLimit
+      });
+    }
+
     if (user.status !== 'active' || !Number.isFinite(Date.parse(user.expiration_date)) || Date.parse(user.expiration_date) <= Date.now()) {
       return res.status(403).json({ error: 'Cuenta vencida o revocada.' });
     }
@@ -471,10 +521,6 @@ async function handleCheckUser(id, req, res) {
     const expDateStr = user.expiration_date.split('T')[0];
     const [year, month, day] = expDateStr.split('-');
     const formattedDate = `${day}/${month}/${year}`;
-    const bytesUsed = Number(user.bytes_used) > 0 ? Number(user.bytes_used) : 0;
-    const formattedUsage = typeof security.formatTrafficBytes === 'function'
-      ? security.formatTrafficBytes(bytesUsed)
-      : '0.00 MB';
 
     res.json({
       count_connections: activeConnections,
@@ -486,7 +532,9 @@ async function handleCheckUser(id, req, res) {
       uuid: user.hwid || null,
       bytes_used: bytesUsed,
       gb_used: formattedUsage,
-      data_used: formattedUsage
+      data_used: formattedUsage,
+      limit_bytes: limitBytes,
+      limit_data: formattedLimit
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

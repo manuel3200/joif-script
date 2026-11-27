@@ -239,8 +239,30 @@ function validateUserPatch(body, existingUser, now = Date.now()) {
   if (body.reset_traffic === true) {
     patch.reset_traffic = true;
   }
+  if (body.data_limit_gb !== undefined || body.data_limit_bytes !== undefined) {
+    patch.data_limit_bytes = parseDataLimitBytes(body);
+  }
   if (Object.keys(patch).length === 0) throw Error('No se enviaron campos válidos para actualizar.');
   return patch;
+}
+function parseDataLimitBytes(body) {
+  if (!body || typeof body !== 'object') return 0;
+  if (body.data_limit_bytes !== undefined && body.data_limit_bytes !== '' && body.data_limit_bytes !== null) {
+    const b = Number(body.data_limit_bytes);
+    if (!Number.isFinite(b) || b < 0 || b > 100 * 1024 * 1024 * 1024 * 1024) throw Error('Cuota de datos inválida.');
+    return Math.floor(b);
+  }
+  if (body.data_limit_gb !== undefined && body.data_limit_gb !== '' && body.data_limit_gb !== null) {
+    const gb = Number(body.data_limit_gb);
+    if (!Number.isFinite(gb) || gb < 0 || gb > 100000) throw Error('Cuota en GB inválida (usa 0 para ilimitado).');
+    return Math.round(gb * 1024 * 1024 * 1024);
+  }
+  return 0;
+}
+function formatDataLimit(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return 'Ilimitado';
+  return formatTrafficBytes(n);
 }
 function getHostTelemetry() {
   const totalMb = Math.round(os.totalmem() / (1024 * 1024));
@@ -273,4 +295,4 @@ function getHostTelemetry() {
     ram_percent: ramPercent
   };
 }
-module.exports = { linuxName, validateAccount, hashPassword, verifyPassword, sessionSecret, run, sessions, formatTrafficBytes, parseProcIoBytes, sessionPids, createTrafficCollector, allSessions, createRateLimiter, validateUserPatch, getHostTelemetry };
+module.exports = { linuxName, validateAccount, hashPassword, verifyPassword, sessionSecret, run, sessions, formatTrafficBytes, parseProcIoBytes, sessionPids, createTrafficCollector, allSessions, createRateLimiter, validateUserPatch, getHostTelemetry, parseDataLimitBytes, formatDataLimit };
